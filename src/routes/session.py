@@ -9,6 +9,7 @@ from bson import ObjectId
 from src.security.jwt import issue_jwt
 from src.db.mongo import get_db
 from src.config import settings
+from .chat import router as _chat_router
 
 router = APIRouter(prefix="/session", tags=["session"])
 
@@ -56,3 +57,12 @@ async def start(req: StartRequest) -> StartResponse:
         expires_in=ttl,
         tenant_id=tenant_id,
     )
+
+class EndRequest(BaseModel):
+  session_id: str
+
+@router.post("/end")
+async def end_session(req: EndRequest):
+    """Mark a session as inactive when user resets conversation."""
+    await sessions_repo.mark_inactive(req.session_id)
+    return {"ok": True, "status": "inactive", "session_id": req.session_id}

@@ -42,6 +42,7 @@ from src.services.intent_tools_picker import pick_tools
 from src.services.capabilities_banner import get_capabilities_banner_text
 from src.services.suggestions_extractor import extract_suggestions
 from src.services.prompt_loader import get_actor_prompt_header
+from src.services.events import broadcast_event
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -226,7 +227,20 @@ async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str
         session = await sessions_repo.create_session()
         session_id = session["_id"]
 
-    await messages_repo.create_user_message(session_id, user_text)
+    user_doc = await messages_repo.create_user_message(session_id, user_text)
+    # Broadcast user message immediately for realtime admin view
+    try:
+        await broadcast_event({"type": "message.created", "data": user_doc})
+        await broadcast_event({
+            "type": "conversation.updated",
+            "data": {
+                "session_id": session_id,
+                "last_message_at": user_doc.get("created_at"),
+                "last_sender": "user",
+            },
+        })
+    except Exception:
+        pass
 
     # ---------- PASS 1: picker reads RAW full history ----------
     picker_history_msgs = await _build_picker_history_messages(session_id)

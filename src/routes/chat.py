@@ -46,6 +46,28 @@ async def post_chat(body: ChatBody = Body(...)) -> Dict[str, Any]:
         session = await sessions_repo.create_session()
         session_id = session["_id"]
 
+    # If admin takeover, do not let bot respond
+    if session.get("handoff_mode") == "admin":
+        user_msg = await messages_repo.create_user_message(session_id, body.message)
+        await broadcast_event({"type": "message.created", "data": user_msg})
+        await broadcast_event({
+            "type": "conversation.updated",
+            "data": {
+                "session_id": session_id,
+                "handoff_mode": "admin",
+                "last_message_at": user_msg.get("created_at"),
+                "last_sender": "user",
+            },
+        })
+        return {
+            "session_id": session_id,
+            "message_id": user_msg.get("_id"),
+            "reply": None,
+            "suggestions": [],
+            "handoff_mode": "admin",
+            "note": "Admin takeover mode - bot will not respond",
+        }
+
     # Run the chat turn
     message_id, reply, suggestions = await chat_turn(session_id, body.message)
 

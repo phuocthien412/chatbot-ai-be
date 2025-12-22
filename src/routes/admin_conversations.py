@@ -118,6 +118,10 @@ async def set_handoff(
         "type": "handoff.changed",
         "data": {"session_id": session_id, "handoff_mode": mode},
     })
+    await broadcast_event({
+        "type": "conversation.updated",
+        "data": {"session_id": session_id, "handoff_mode": mode},
+    })
     return {"ok": True, "handoff_mode": mode}
 
 
