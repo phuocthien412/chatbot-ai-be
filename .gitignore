@@ -1,0 +1,102 @@
+# ENV
+.env
+*.env
+venv
+.venv
+venv/*
+
+# Directories
+logs/*
+uploads/*
+storages/*
+
+# Dir
+media
+media/*
+
+#
+*.json
+*.bin
+
+# Directories
+logs/*
+uploads/*
+upload/*
+media
+media/*
+
+# Byte-compiled / cache
+__pycache__/*
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.env.*
+venv/
+.venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+*.out
+*.err
+
+# Uvicorn log / debug
+*.pid
+*.db-journal
+
+# Database (SQLite)
+*.db
+
+# Migrations (Alembic)
+alembic/versions/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# pytest
+.cache/
+.pytest_cache/
+
+# mypy / coverage / test reports
+.mypy_cache/
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# pip
+pip-wheel-metadata/
+__pypackages__/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local config
+*.local
+*.bak
+
+# PyCharm
+.idea/
+
+# FastAPI static files or build outputs (if any)
+staticfiles/
+build/
+
+temp.py

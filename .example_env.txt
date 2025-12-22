@@ -1,0 +1,38 @@
+# FastAPI
+APP_ENV=dev
+APP_HOST=0.0.0.0
+APP_PORT=8000
+
+# MongoDB
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB=chatbot_ai
+
+# OpenAI
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL_PICKER=gpt-4.1-nano
+OPENAI_MODEL_ACTOR=gpt-4.1-mini
+OPENAI_MODEL_TICKET_GEN=gpt-4.1-mini
+OPENAI_MODEL_RAG=gpt-4.1-mini
+OPENAI_MODEL_VISION=gpt-4.1-mini
+
+OPENAI_MODEL_TTS=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=marin
+TTS_DEFAULT_FORMAT=mp3
+
+# Limits (optional sane defaults)
+PROMPT_CHAR_BUDGET=120000
+SINGLE_MESSAGE_CHAR_LIMIT=20000
+REQUEST_TIMEOUT_SECONDS=30
+
+# # --- Zalo OA Integration (Phase A) ---
+# ZALO_ENABLED=true
+# ZALO_SANDBOX=true
+# ZALO_WEBHOOK_PATH=/integrations/zalo/webhook
+# ZALO_REPLY_WINDOW_DAYS=7
+
+JWT_SECRET=change_me_in_prod
+JWT_ISSUER=chatbot-be
+JWT_TTL_SECONDS=600
+
+ADMIN_JWT_TTL_SECONDS=28800
