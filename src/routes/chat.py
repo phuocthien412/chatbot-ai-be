@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from src.repositories import sessions_repo, messages_repo
 from src.services.chat_service import chat_turn
+from src.services.events import broadcast_event
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -51,6 +52,23 @@ async def post_chat(body: ChatBody = Body(...)) -> Dict[str, Any]:
     # Fetch message for created_at
     msg_doc = await messages_repo.get_message(message_id)
     created_at = msg_doc.get("created_at") if isinstance(msg_doc, dict) else None
+
+    # Broadcast to admin listeners (best-effort)
+    try:
+        # send last two messages for context
+        msgs = await messages_repo.list_messages(session_id, limit=2)
+        await broadcast_event({
+            "type": "conversation.updated",
+            "data": {
+                "session_id": session_id,
+                "last_message_at": created_at,
+                "last_sender": "assistant",
+            },
+        })
+        for m in msgs:
+            await broadcast_event({"type": "message.created", "data": m})
+    except Exception:
+        pass
 
     return {
         "session_id": session_id,

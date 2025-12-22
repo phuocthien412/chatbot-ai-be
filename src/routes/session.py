@@ -38,6 +38,11 @@ async def start(req: StartRequest) -> StartResponse:
         "status": "active",
         "created_at": now,
         "expires_at": expires_at,
+        "last_activity_at": now,
+        "last_message_at": None,
+        "last_sender": None,
+        "unread_admin": 0,
+        "handoff_mode": "bot",
     })
 
     # Mint user token bound to this session

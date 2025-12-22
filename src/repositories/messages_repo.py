@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 
 from ..db.mongo import get_db
+from . import sessions_repo
 
 # --- internal helpers ---------------------------------------------------------
 
@@ -42,7 +43,12 @@ def _as_public(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 # --- create -------------------------------------------------------------------
 
-async def _create(session_id: str, role: str, content: str) -> Dict[str, Any]:
+async def _create(
+    session_id: str,
+    role: str,
+    content: str,
+    sender: Optional[str] = None,
+) -> Dict[str, Any]:
     db = get_db()
     sid_oid = _to_oid(session_id)
     doc: Dict[str, Any] = {
@@ -52,15 +58,32 @@ async def _create(session_id: str, role: str, content: str) -> Dict[str, Any]:
         "content": content,
         "created_at": _iso_now(),
     }
+    if sender:
+        doc["sender"] = sender
     res = await db.messages.insert_one(doc)
     doc["_id"] = res.inserted_id  # ObjectId
-    return _as_public(doc)
+    public_doc = _as_public(doc)
+    try:
+        reset_unread = role in ("assistant", "system") or sender == "admin"
+        await sessions_repo.bump_session_message(
+            session_id,
+            sender=sender or role,
+            content_preview=content,
+            reset_unread_admin=reset_unread,
+        )
+    except Exception:
+        # Do not break message creation on session bump failure
+        pass
+    return public_doc
 
 async def create_user_message(session_id: str, content: str) -> Dict[str, Any]:
     return await _create(session_id, "user", content)
 
 async def create_assistant_message(session_id: str, content: str) -> Dict[str, Any]:
     return await _create(session_id, "assistant", content)
+
+async def create_admin_message(session_id: str, content: str) -> Dict[str, Any]:
+    return await _create(session_id, "assistant", content, sender="admin")
 
 async def create_system_message(session_id: str, content: str) -> Dict[str, Any]:
     return await _create(session_id, "system", content)
