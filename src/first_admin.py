@@ -8,7 +8,7 @@ async def main() -> None:
     await connect()
     await create_admin_user(
         email="admin@aitc.vn",
-        password="YourStrongPassword123!",  # change to whatever you want
+        password="admin123@",  # change to whatever you want
         display_name="AITC Admin",
     )
     await disconnect()

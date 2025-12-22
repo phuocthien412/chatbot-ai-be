@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 from src.services import prompt_loader
 from src.services.capabilities_banner import get_capabilities_banner_text
 from src.services.prompt_loader import get_actor_prompt_header, get_picker_prompt_header
+from src.services.notifications import log_notification
 
 router = APIRouter(prefix="/admin/prompts", tags=["admin"])
 
@@ -173,6 +174,15 @@ async def update_file(name: str, body: UpdateFileBody = Body(...), request: Requ
     # Soft reload prompt cache (same as /admin/prompts/reload)
     prompt_loader.reload()
 
+    await log_notification(
+        title=f"Prompt '{name}' updated",
+        message=body.note or "Prompt content was updated.",
+        type_="info",
+        module="prompts",
+        target_name=name,
+        meta={"bytes": len(raw)},
+    )
+
     return {
         "ok": True,
         "name": name,
@@ -185,6 +195,12 @@ async def update_file(name: str, body: UpdateFileBody = Body(...), request: Requ
 async def reload_prompts(request: Request):
     _enforce_auth_or_local(request)
     prompt_loader.reload()
+    await log_notification(
+        title="Prompts reloaded",
+        message="Prompt cache reloaded by admin action.",
+        type_="info",
+        module="prompts",
+    )
     return {"ok": True}
 
 @router.post("/preview")
@@ -226,5 +242,14 @@ async def rollback_file(body: RollbackBody = Body(...), request: Request = None)
 
     _write_utf8(path, content)
     prompt_loader.reload()
+
+    await log_notification(
+        title=f"Prompt '{body.name}' rolled back",
+        message=f"Restored from backup {body.backup}",
+        type_="warning",
+        module="prompts",
+        target_name=body.name,
+        meta={"backup": body.backup},
+    )
 
     return {"ok": True, "restored": body.name, "from": body.backup, "backup_of_previous": backup_filename}

@@ -22,6 +22,7 @@ from .feature_modules.admin_add_ticket_type.routes.admin_prompts_files import ro
 from .routes.debug_picker import router as debug_picker_router
 from .routes.debug_actor import router as debug_actor_router
 from .feature_modules.admin_add_ticket_type.routes.admin_ticket_types_simple import router as admin_simple_ticket
+from .routes.notifications import router as notifications_router
 from .security.deps import (
     enforce_sid_binding,
     session_alive_guard,
@@ -76,6 +77,7 @@ app.include_router(admin_prompts_files_router, dependencies=_admin_protect)
 app.include_router(debug_picker_router, dependencies=_admin_protect)
 app.include_router(debug_actor_router, dependencies=_admin_protect)
 app.include_router(admin_simple_ticket, dependencies=_admin_protect)
+app.include_router(notifications_router, dependencies=_admin_protect)
 
 
 @app.get("/healthz")

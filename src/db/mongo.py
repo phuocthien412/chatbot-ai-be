@@ -26,6 +26,9 @@ async def connect() -> None:
     # indices
     await _db.messages.create_index([("session_id", 1), ("created_at", 1)])
     await _db.sessions.create_index([("last_activity_at", -1)])
+    await _db.notifications.create_index([("created_at", -1)])
+    await _db.notifications.create_index([("is_read", 1)])
+    await _db.notifications.create_index([("module", 1)])
 
 async def disconnect() -> None:
     global _client, _db

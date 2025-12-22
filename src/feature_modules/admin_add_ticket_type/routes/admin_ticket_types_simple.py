@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from ....db.mongo import get_db
 from ..services.type_gen_simple import generate_spec_from_text
 from ..services.spec_sanity import basic_spec_checks
+from ....services.notifications import log_notification
 
 router = APIRouter(prefix="/admin", tags=["admin-simple"])
 
@@ -74,6 +75,14 @@ async def create_or_replace_from_text(payload: Dict[str, Any] = Body(...)):
 
     # 4) Return the stored doc (without internal ObjectId)
     stored = await db.ticket_types.find_one({"_id": type_id}, {"_id": 1, "display_name": 1, "description_text": 1, "spec": 1, "llm": 1, "timestamps": 1})
+    await log_notification(
+        title="Ticket type saved",
+        message=f"Ticket type '{display_name or type_id}' was created/updated.",
+        type_="success",
+        module="ticket-types",
+        target_name=type_id,
+        meta={"display_name": display_name},
+    )
     return {"ok": True, "ticket_type": stored}
 
 @router.get("/ticket-types-simple")
