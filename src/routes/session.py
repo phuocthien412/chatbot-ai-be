@@ -9,6 +9,7 @@ from bson import ObjectId
 from src.security.jwt import issue_jwt
 from src.db.mongo import get_db
 from src.config import settings
+from src.services.events import broadcast_event
 from .chat import router as _chat_router
 
 router = APIRouter(prefix="/session", tags=["session"])
@@ -65,4 +66,15 @@ class EndRequest(BaseModel):
 async def end_session(req: EndRequest):
     """Mark a session as inactive when user resets conversation."""
     await sessions_repo.mark_inactive(req.session_id)
-    return {"ok": True, "status": "inactive", "session_id": req.session_id}
+    try:
+        await broadcast_event({
+            "type": "conversation.updated",
+            "data": {
+                "session_id": req.session_id,
+                "status": "ended",
+                "handoff_mode": "bot",
+            },
+        })
+    except Exception:
+        pass
+    return {"ok": True, "status": "ended", "session_id": req.session_id}

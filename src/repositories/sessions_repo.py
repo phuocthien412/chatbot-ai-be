@@ -111,7 +111,7 @@ async def mark_inactive(session_id: str) -> None:
     oid = _to_oid(session_id)
     update = {
         "$set": {
-            "status": "inactive",
+            "status": "ended",
             "handoff_mode": "bot",
             "last_activity_at": _now_utc(),
         }
@@ -120,6 +120,11 @@ async def mark_inactive(session_id: str) -> None:
         await db.sessions.update_one({"_id": oid}, update)
     else:
         await db.sessions.update_one({"_id": session_id}, update)
+
+async def mark_all_status(status: str) -> None:
+    """Bulk update all sessions to a given status (used on prompt reload)."""
+    db = get_db()
+    await db.sessions.update_many({}, {"$set": {"status": status, "handoff_mode": "bot"}})
 
 async def list_sessions_raw(
     status: Optional[str] = None,

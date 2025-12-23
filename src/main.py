@@ -24,6 +24,7 @@ from .routes.debug_actor import router as debug_actor_router
 from .feature_modules.admin_add_ticket_type.routes.admin_ticket_types_simple import router as admin_simple_ticket
 from .routes.notifications import router as notifications_router
 from .routes.admin_conversations import router as admin_conversations_router
+from .routes.user_ws import router as user_ws_router
 from .security.deps import (
     enforce_sid_binding,
     session_alive_guard,
@@ -80,6 +81,7 @@ app.include_router(debug_actor_router, dependencies=_admin_protect)
 app.include_router(admin_simple_ticket, dependencies=_admin_protect)
 app.include_router(notifications_router, dependencies=_admin_protect)
 app.include_router(admin_conversations_router)
+app.include_router(user_ws_router)
 
 
 @app.get("/healthz")

@@ -13,7 +13,7 @@ router = APIRouter(prefix="/admin/conversations", tags=["admin.conversations"])
 
 
 class SendMessageBody(BaseModel):
-    message: str = Field(..., min_length=1)
+    message: str = Field(..., description="Message content")
     mode: str = Field("bot", pattern="^(bot|admin)$")
 
 
@@ -67,10 +67,19 @@ async def send_conversation_message(
     _ctx=Depends(admin_guard),
 ) -> Dict[str, Any]:
     await _get_session_or_404(session_id)
+    text = (payload.message or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="message required")
+
     if payload.mode == "admin":
-        msg = await messages_repo.create_admin_message(session_id, payload.message)
+        msg = await messages_repo.create_admin_message(session_id, text)
         await sessions_repo.set_handoff_mode(session_id, "admin")
         await broadcast_event({"type": "message.created", "data": msg})
+        try:
+            from src.services.user_events import broadcast_to_user
+            await broadcast_to_user(session_id, {"type": "message.created", "data": msg})
+        except Exception:
+            pass
         await broadcast_event({
             "type": "conversation.updated",
             "data": {
@@ -78,15 +87,21 @@ async def send_conversation_message(
                 "last_message_at": msg.get("created_at"),
                 "last_sender": "admin",
                 "handoff_mode": "admin",
+                "status": "active",
             },
         })
         return {"mode": "admin", "message": msg}
 
     # mode == bot: treat as user input and let bot reply
-    assistant_message_id, reply, suggestions = await chat_turn(session_id, payload.message)
+    assistant_message_id, reply, suggestions = await chat_turn(session_id, text)
     recent = await messages_repo.list_messages(session_id, limit=2)
     for m in recent:
         await broadcast_event({"type": "message.created", "data": m})
+        try:
+            from src.services.user_events import broadcast_to_user
+            await broadcast_to_user(session_id, {"type": "message.created", "data": m})
+        except Exception:
+            pass
     await broadcast_event({
         "type": "conversation.updated",
         "data": {
@@ -120,7 +135,7 @@ async def set_handoff(
     })
     await broadcast_event({
         "type": "conversation.updated",
-        "data": {"session_id": session_id, "handoff_mode": mode},
+        "data": {"session_id": session_id, "handoff_mode": mode, "status": "active"},
     })
     return {"ok": True, "handoff_mode": mode}
 
@@ -146,6 +161,12 @@ async def conversations_ws(websocket: WebSocket):
     await ws_manager.connect(websocket)
     try:
         while True:
-            await websocket.receive_text()
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                try:
+                    await websocket.send_text("pong")
+                except Exception:
+                    break
+                continue
     except Exception:
         await ws_manager.disconnect(websocket)

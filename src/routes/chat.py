@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from src.repositories import sessions_repo, messages_repo
 from src.services.chat_service import chat_turn
 from src.services.events import broadcast_event
+from src.services.user_events import broadcast_to_user
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -46,10 +47,15 @@ async def post_chat(body: ChatBody = Body(...)) -> Dict[str, Any]:
         session = await sessions_repo.create_session()
         session_id = session["_id"]
 
+    # If session was timeout, reactivate bot mode on new user message
+    if session.get("status") == "timeout":
+        await sessions_repo.set_handoff_mode(session_id, "bot")
+
     # If admin takeover, do not let bot respond
     if session.get("handoff_mode") == "admin":
         user_msg = await messages_repo.create_user_message(session_id, body.message)
         await broadcast_event({"type": "message.created", "data": user_msg})
+        await broadcast_to_user(session_id, {"type": "message.created", "data": user_msg})
         await broadcast_event({
             "type": "conversation.updated",
             "data": {
@@ -89,6 +95,7 @@ async def post_chat(body: ChatBody = Body(...)) -> Dict[str, Any]:
         })
         for m in msgs:
             await broadcast_event({"type": "message.created", "data": m})
+            await broadcast_to_user(session_id, {"type": "message.created", "data": m})
     except Exception:
         pass
 
