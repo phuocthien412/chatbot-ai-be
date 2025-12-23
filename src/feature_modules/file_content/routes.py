@@ -17,29 +17,13 @@ from .services import (
 from .utils import guess_mime_from_path
 
 router = APIRouter(prefix="/files", tags=["files"])
+admin_router = APIRouter(prefix="/admin/files", tags=["admin-files"])
 
-@router.options("/{file_id}/content")
-async def files_content_options(file_id: str) -> Response:
-    resp = Response(status_code=204)
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"] = "Range, If-None-Match, Accept"
-    resp.headers["Access-Control-Max-Age"] = "86400"
-    return resp
-
-@router.get("/{file_id}/content")
-async def files_content(
+async def _serve_file(
     request: Request,
-    file_id: str,
-    download: int = Query(0, ge=0, le=1, description="0=inline (default), 1=attachment"),
-):
-    if not PUBLIC_BY_ID:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-    meta = await file_index.lookup(file_id)
-    if not meta:
-        return JSONResponse(status_code=404, content={"ok": False, "detail": "not found"})
-
+    meta,
+    download: int,
+) -> Response:
     p: Path = meta.abs_path
     if not p.exists():
         return JSONResponse(status_code=410, content={"ok": False, "detail": "gone"})
@@ -95,6 +79,51 @@ async def files_content(
         status_code=200,
         headers=headers,
     )
+
+@router.options("/{file_id}/content")
+async def files_content_options(file_id: str) -> Response:
+    resp = Response(status_code=204)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Range, If-None-Match, Accept"
+    resp.headers["Access-Control-Max-Age"] = "86400"
+    return resp
+
+@router.get("/{file_id}/content")
+async def files_content(
+    request: Request,
+    file_id: str,
+    download: int = Query(0, ge=0, le=1, description="0=inline (default), 1=attachment"),
+):
+    if not PUBLIC_BY_ID:
+        pass
+
+    meta = await file_index.lookup(file_id)
+    if not meta:
+        return JSONResponse(status_code=404, content={"ok": False, "detail": "not found"})
+
+    return await _serve_file(request, meta, download)
+
+@admin_router.options("/{file_id}/content")
+async def admin_files_content_options(file_id: str) -> Response:
+    resp = Response(status_code=204)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Range, If-None-Match, Accept"
+    resp.headers["Access-Control-Max-Age"] = "86400"
+    return resp
+
+@admin_router.get("/{file_id}/content")
+async def admin_files_content(
+    request: Request,
+    file_id: str,
+    download: int = Query(0, ge=0, le=1, description="0=inline (default), 1=attachment"),
+):
+    meta = await file_index.lookup(file_id)
+    if not meta:
+        return JSONResponse(status_code=404, content={"ok": False, "detail": "not found"})
+
+    return await _serve_file(request, meta, download)
 
 def register(app) -> None:
     """

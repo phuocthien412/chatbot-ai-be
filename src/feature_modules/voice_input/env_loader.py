@@ -36,8 +36,9 @@ def ensure_feature_env(var_names: list[str]) -> None:
 
     here = Path(__file__).resolve().parent
     module_env = here / ".env.voice_input"
-    # __file__ => .../src/feature_modules/voice_input/env_loader.py
-    root_env = Path(__file__).resolve().parents[4] / ".env"
+    # __file__ => .../chatbot-ai-be/src/feature_modules/voice_input/env_loader.py
+    # Repo root is parents[3]; parents[4] would jump above the project.
+    root_env = Path(__file__).resolve().parents[3] / ".env"
 
     loaded = _load([module_env, root_env])
     _ENV_READY = True

@@ -14,7 +14,7 @@ from .routes.files import router as files_router
 from .AI_tool_call_modules.info_search.routes import router as info_search_router
 from .feature_modules.voice_input.routes import router as stt_router
 from .feature_modules.tts.routes import router as tts_router
-from .feature_modules.file_content.routes import router as file_content_router
+from .feature_modules.file_content.routes import router as file_content_router, admin_router as admin_file_content_router
 
 # Admin/debug (portal-protected via admin JWT)
 from .feature_modules.admin_add_ticket_type.routes.admin_prompts import router as admin_prompts_router
@@ -30,6 +30,7 @@ from .security.deps import (
     session_alive_guard,
     file_access_guard,
     admin_guard,
+    admin_guard_allow_query,
 )
 
 
@@ -60,6 +61,7 @@ app.include_router(admin_auth_router)
 
 # Protected (JWT + session binding + session not expired)
 _protect = [Depends(enforce_sid_binding), Depends(session_alive_guard)]
+_admin_protect = [Depends(admin_guard)]
 app.include_router(chat_router, dependencies=_protect)
 app.include_router(files_router, dependencies=_protect)
 app.include_router(info_search_router, dependencies=_protect)
@@ -71,9 +73,13 @@ app.include_router(
     file_content_router,
     dependencies=[Depends(file_access_guard), Depends(session_alive_guard)],
 )
+# Admin file preview (bypasses session binding/ownership; protected by admin_guard)
+app.include_router(
+    admin_file_content_router,
+    dependencies=[Depends(admin_guard_allow_query)],
+)
 
 # Admin/debug: protected by admin JWT (admin portal)
-_admin_protect = [Depends(admin_guard)]
 app.include_router(admin_prompts_router, dependencies=_admin_protect)
 app.include_router(admin_prompts_files_router, dependencies=_admin_protect)
 app.include_router(debug_picker_router, dependencies=_admin_protect)

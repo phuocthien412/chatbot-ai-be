@@ -58,6 +58,32 @@ async def admin_guard(ctx: RequestContext = Depends(auth_user)) -> RequestContex
         raise HTTPException(status_code=403, detail="Admin only")
     return ctx
 
+# Admin guard variant that also accepts ?token=... (used by admin file preview URLs)
+async def admin_guard_allow_query(
+    req: Request,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> RequestContext:
+    token = None
+    if creds and creds.scheme.lower() == "bearer":
+        token = creds.credentials
+    if not token:
+        token = req.query_params.get("token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    try:
+        payload = verify_jwt(token)
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {type(e).__name__}")
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return RequestContext(
+        sub=payload.get("sub", "admin"),
+        sid=payload.get("sid", "admin"),
+        tid=payload.get("tid", "admin"),
+        role=payload.get("role", ""),
+        raw=payload,
+    )
+
 async def enforce_sid_binding(
     request: Request,
     ctx: RequestContext = Depends(auth_user),
