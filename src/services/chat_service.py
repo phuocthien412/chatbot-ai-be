@@ -39,6 +39,7 @@ from src.repositories import sessions_repo, messages_repo
 from src.repositories.messages_repo import create_system_message
 from src.services.features_registry import get_provider, all_providers
 from src.services.intent_tools_picker import pick_tools
+from src.services import runtime_settings
 from src.services.capabilities_banner import get_capabilities_banner_text
 from src.services.suggestions_extractor import extract_suggestions
 from src.services.prompt_loader import get_actor_prompt_header
@@ -285,6 +286,9 @@ async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str
     else:
         logger.info(f"[PICKER] no capability selected (conf={pick.get('confidence')})")
 
+    # Resolve dynamic timeout (fallback to env default)
+    timeout_seconds = await runtime_settings.get_request_timeout_seconds()
+
     # ---------- PASS 2: actor completion w/ chosen tools ----------
     openai_msgs = await _build_actor_messages(
         session_id,
@@ -322,7 +326,7 @@ async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str
         _call_openai_sync,
         actor_model,
         openai_msgs,
-        settings.request_timeout_seconds,
+        timeout_seconds,
         tools=tools_spec if tools_spec else None,
         tool_choice=tool_choice,
     )
@@ -387,7 +391,7 @@ async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str
                 _call_openai_sync,
                 actor_model,
                 follow_messages,
-                settings.request_timeout_seconds,
+                timeout_seconds,
                 tools=tools_spec if tools_spec else None,
                 tool_choice="none" if tools_spec else None,
             )
@@ -472,7 +476,7 @@ async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str
         _call_openai_sync,
         actor_model,
         follow_messages,
-        settings.request_timeout_seconds,
+        timeout_seconds,
         tools=tools_spec if tools_spec else None,
         tool_choice="none" if tools_spec else None,
     )

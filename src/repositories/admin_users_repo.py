@@ -20,6 +20,7 @@ import hashlib
 import hmac
 
 from bson import ObjectId
+from pymongo import ReturnDocument
 
 from src.db.mongo import get_db
 
@@ -112,6 +113,59 @@ async def create_admin_user(
     res = await db.admin_users.insert_one(doc)
     doc["_id"] = res.inserted_id
     return doc
+
+
+async def get_admin_by_id(admin_id: Any) -> Optional[Dict[str, Any]]:
+    """Fetch an admin user by id."""
+    db = get_db()
+    oid = _to_oid(admin_id)
+    if oid is None:
+        return None
+    doc = await db.admin_users.find_one({"_id": oid})
+    return doc
+
+
+async def update_admin_profile(
+    admin_id: Any,
+    *,
+    display_name: Optional[str] = None,
+    avatar_url: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Update display_name/avatar for an admin user."""
+    db = get_db()
+    oid = _to_oid(admin_id)
+    if oid is None:
+        return None
+
+    updates: Dict[str, Any] = {}
+    if display_name is not None:
+        updates["display_name"] = display_name
+    if avatar_url is not None:
+        updates["avatar_url"] = avatar_url
+
+    if not updates:
+        return await get_admin_by_id(admin_id)
+
+    updates["updated_at"] = _now_utc()
+    return await db.admin_users.find_one_and_update(
+        {"_id": oid},
+        {"$set": updates},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+async def update_admin_password_hash(admin_id: Any, password_hash: str) -> bool:
+    """Replace password_hash for an admin user."""
+    db = get_db()
+    oid = _to_oid(admin_id)
+    if oid is None:
+        return False
+    now = _now_utc()
+    res = await db.admin_users.update_one(
+        {"_id": oid},
+        {"$set": {"password_hash": password_hash, "updated_at": now}},
+    )
+    return res.modified_count > 0 or res.matched_count > 0
 
 
 async def mark_login_success(admin_id: Any) -> None:
