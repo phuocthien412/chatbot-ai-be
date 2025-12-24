@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
+import time
 from bson import ObjectId
+from pymongo import ReturnDocument
 from ..db.mongo import get_db
 
 def _as_public(doc: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -21,6 +23,30 @@ def _to_oid(id_str: str):
     except Exception:
         return None
 
+
+async def _generate_conversation_id() -> str:
+    db = get_db()
+    res = await db.counters.find_one_and_update(
+        {"_id": "conversation_seq"},
+        {"$inc": {"seq": 1}, "$setOnInsert": {"created_at": datetime.utcnow()}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    seq = int(res.get("seq", 1))
+    return f"C{seq:06d}"
+
+
+async def _ensure_conversation_id(doc: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not doc:
+        return doc
+    if doc.get("conversation_id"):
+        return doc
+    conv_id = await _generate_conversation_id()
+    db = get_db()
+    await db.sessions.update_one({"_id": doc.get("_id")}, {"$set": {"conversation_id": conv_id}})
+    doc["conversation_id"] = conv_id
+    return doc
+
 async def get_session(session_id: str) -> Optional[dict]:
     db = get_db()
     # Try ObjectId match first, fallback to legacy string
@@ -30,6 +56,7 @@ async def get_session(session_id: str) -> Optional[dict]:
         doc = await db.sessions.find_one({"_id": oid})
     if doc is None:
         doc = await db.sessions.find_one({"_id": session_id})
+    doc = await _ensure_conversation_id(doc)
     return _as_public(doc)
 
 async def create_session() -> dict:
@@ -44,6 +71,7 @@ async def create_session() -> dict:
         "last_sender": None,
         "unread_admin": 0,
         "handoff_mode": "bot",
+        "conversation_id": await _generate_conversation_id(),
     }
     res = await db.sessions.insert_one(doc)
     doc["_id"] = res.inserted_id
@@ -96,10 +124,12 @@ async def bump_session_message(
     else:
         await db.sessions.update_one({"_id": session_id}, update)
 
-async def set_handoff_mode(session_id: str, mode: str) -> None:
+async def set_handoff_mode(session_id: str, mode: str, admin_id: Optional[str] = None) -> None:
     db = get_db()
     oid = _to_oid(session_id)
     update = {"$set": {"handoff_mode": mode, "status": "active"}}
+    if admin_id:
+        update["$set"]["takeover_admin"] = admin_id
     if oid is not None:
         await db.sessions.update_one({"_id": oid}, update)
     else:
@@ -130,6 +160,7 @@ async def list_sessions_raw(
     status: Optional[str] = None,
     handoff_mode: Optional[str] = None,
     limit: int = 50,
+    search: Optional[str] = None,
 ) -> list:
     db = get_db()
     query: Dict[str, Any] = {}
@@ -137,13 +168,16 @@ async def list_sessions_raw(
         query["status"] = status
     if handoff_mode:
         query["handoff_mode"] = handoff_mode
+    if search:
+        query["conversation_id"] = {"$regex": search, "$options": "i"}
     cur = (
         db.sessions.find(query)
-        .sort([("last_message_at", -1), ("created_at", -1)])
+        .sort([("created_at", -1)])
         .limit(max(1, min(limit, 200)))
     )
     out = []
     async for s in cur:
+        s = await _ensure_conversation_id(s)
         out.append(_as_public(s))
     return out
 

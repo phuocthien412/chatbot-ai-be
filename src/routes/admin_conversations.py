@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from src.repositories import sessions_repo, messages_repo
 from src.services.chat_service import chat_turn
-from src.security.deps import admin_guard
+from src.security.deps import admin_guard, RequestContext
 from src.services.events import manager as ws_manager, broadcast_event
 from src.security.jwt import verify_jwt
 
@@ -29,9 +29,15 @@ async def list_conversations(
     status: Optional[str] = Query(None),
     handoff_mode: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None),
     _ctx=Depends(admin_guard),
 ) -> Dict[str, Any]:
-    sessions = await sessions_repo.list_sessions_raw(status=status, handoff_mode=handoff_mode, limit=limit)
+    sessions = await sessions_repo.list_sessions_raw(
+        status=status,
+        handoff_mode=handoff_mode,
+        limit=limit,
+        search=search,
+    )
     return {"items": sessions, "count": len(sessions)}
 
 
@@ -64,7 +70,7 @@ async def get_conversation_messages(
 async def send_conversation_message(
     session_id: str,
     payload: SendMessageBody = Body(...),
-    _ctx=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ) -> Dict[str, Any]:
     await _get_session_or_404(session_id)
     text = (payload.message or "").strip()
@@ -73,7 +79,7 @@ async def send_conversation_message(
 
     if payload.mode == "admin":
         msg = await messages_repo.create_admin_message(session_id, text)
-        await sessions_repo.set_handoff_mode(session_id, "admin")
+        await sessions_repo.set_handoff_mode(session_id, "admin", admin_id=ctx.sub or ctx.sid)
         await broadcast_event({"type": "message.created", "data": msg})
         try:
             from src.services.user_events import broadcast_to_user
@@ -87,6 +93,7 @@ async def send_conversation_message(
                 "last_message_at": msg.get("created_at"),
                 "last_sender": "admin",
                 "handoff_mode": "admin",
+                "takeover_admin": ctx.sub or ctx.sid,
                 "status": "active",
             },
         })
@@ -123,19 +130,24 @@ async def send_conversation_message(
 async def set_handoff(
     session_id: str,
     mode: str = Body(..., embed=True),
-    _ctx=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ) -> Dict[str, Any]:
     if mode not in ("bot", "admin"):
         raise HTTPException(status_code=400, detail="mode must be bot|admin")
     await _get_session_or_404(session_id)
-    await sessions_repo.set_handoff_mode(session_id, mode)
+    await sessions_repo.set_handoff_mode(session_id, mode, admin_id=ctx.sub or ctx.sid)
     await broadcast_event({
         "type": "handoff.changed",
-        "data": {"session_id": session_id, "handoff_mode": mode},
+        "data": {"session_id": session_id, "handoff_mode": mode, "takeover_admin": ctx.sub or ctx.sid},
     })
     await broadcast_event({
         "type": "conversation.updated",
-        "data": {"session_id": session_id, "handoff_mode": mode, "status": "active"},
+        "data": {
+            "session_id": session_id,
+            "handoff_mode": mode,
+            "status": "active",
+            "takeover_admin": ctx.sub or ctx.sid,
+        },
     })
     return {"ok": True, "handoff_mode": mode}
 
