@@ -170,3 +170,23 @@ async def conversations_ws(websocket: WebSocket):
                 continue
     except Exception:
         await ws_manager.disconnect(websocket)
+
+
+@router.post("/{session_id}/read")
+async def mark_conversation_read(session_id: str, _ctx=Depends(admin_guard)):
+    await sessions_repo.mark_read(session_id)
+    return {"ok": True}
+
+
+@router.delete("/{session_id}")
+async def delete_conversation(session_id: str, _ctx=Depends(admin_guard)):
+    success = await sessions_repo.delete_session(session_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
+
+
+@router.post("/mark-all-read")
+async def mark_all_conversations_read(_ctx=Depends(admin_guard)):
+    count = await sessions_repo.mark_all_read()
+    return {"ok": True, "updated": count}

@@ -146,3 +146,33 @@ async def list_sessions_raw(
     async for s in cur:
         out.append(_as_public(s))
     return out
+
+
+async def mark_read(session_id: str) -> None:
+    db = get_db()
+    oid = _to_oid(session_id)
+    update = {"$set": {"unread_admin": 0}}
+    if oid is not None:
+        await db.sessions.update_one({"_id": oid}, update)
+    else:
+        await db.sessions.update_one({"_id": session_id}, update)
+
+
+async def delete_session(session_id: str) -> bool:
+    db = get_db()
+    oid = _to_oid(session_id)
+    query = {"_id": oid} if oid else {"_id": session_id}
+    res = await db.sessions.delete_one(query)
+    # cascade delete messages
+    await db.messages.delete_many({"session_id": oid if oid else session_id})
+    return res.deleted_count > 0
+
+
+async def mark_all_read() -> int:
+    """Mark all sessions as read (unread_admin = 0)."""
+    db = get_db()
+    res = await db.sessions.update_many(
+        {"unread_admin": {"$gt": 0}},
+        {"$set": {"unread_admin": 0}}
+    )
+    return res.modified_count
