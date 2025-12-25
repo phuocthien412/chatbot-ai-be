@@ -38,6 +38,7 @@ class LoginResponse(BaseModel):
     email: str
     display_name: str
     expires_in: int
+    avatar_url: Optional[str] = None
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -85,6 +86,7 @@ async def admin_login(payload: LoginRequest) -> LoginResponse:
         email=user.get("email"),  # already normalized
         display_name=user.get("display_name") or user.get("email"),
         expires_in=effective_ttl,
+        avatar_url=user.get("avatar_url"),
     )
 
 
