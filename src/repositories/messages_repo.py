@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 
 from ..db.mongo import get_db
-from . import sessions_repo
+from . import sessions_repo, notifications_repo
 
 # --- internal helpers ---------------------------------------------------------
 
@@ -64,13 +64,36 @@ async def _create(
     doc["_id"] = res.inserted_id  # ObjectId
     public_doc = _as_public(doc)
     try:
-        reset_unread = role in ("assistant", "system") or sender == "admin"
+        # Only clear admin unread counters when an admin sends a message.
+        # Bot/assistant replies should not auto-mark the thread as read for admins.
+        reset_unread = sender == "admin"
         await sessions_repo.bump_session_message(
             session_id,
             sender=sender or role,
             content_preview=content,
             reset_unread_admin=reset_unread,
         )
+        # Create a persisted notification when the user sends a message.
+        if sender == "user" or role == "user":
+            try:
+                session = await sessions_repo.get_session(session_id)
+                title = f"Conversation: {session.get('tenant_id') or 'Unknown'}"
+                preview = (content or "").strip()
+                message_preview = preview[:300] if preview else "User sent a message"
+                await notifications_repo.create_notification(
+                    title=title,
+                    message=message_preview,
+                    type_="info",
+                    module="conversation",
+                    target_name=session.get("tenant_id"),
+                    meta={
+                        "conversation_id": str(session.get("_id") or session_id),
+                        "conversation_code": session.get("conversation_id"),
+                    },
+                )
+            except Exception:
+                # Notification creation should not break message flow.
+                pass
     except Exception:
         # Do not break message creation on session bump failure
         pass
