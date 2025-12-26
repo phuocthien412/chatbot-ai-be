@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
+from pymongo import ReturnDocument
 
 from ..db.mongo import get_db
 
@@ -49,6 +50,47 @@ async def create_notification(
         "meta": meta or {},
     }
     await db.notifications.insert_one(doc)
+    return _present(doc)
+
+
+async def upsert_conversation_notification(
+    session_id: str,
+    conversation_code: Optional[str],
+    tenant_id: Optional[str],
+    message_preview: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Ensure there is only one notification per conversation.
+    Subsequent messages update the preview and mark it unread again.
+    """
+    db = get_db()
+    preview = (message_preview or "User sent a message").strip()
+    title = f"Conversation: {tenant_id or 'Unknown'}"
+    query = {"module": "conversation", "meta.conversation_id": session_id}
+    update = {
+        "$set": {
+            "title": title,
+            "message": preview[:300],
+            "type": "info",
+            "module": "conversation",
+            "is_read": False,
+            "target_name": tenant_id,
+            "meta": {
+                "conversation_id": session_id,
+                "conversation_code": conversation_code,
+            },
+        },
+        "$setOnInsert": {
+            "_id": str(uuid4()),
+            "created_at": _now(),
+        },
+    }
+    doc = await db.notifications.find_one_and_update(
+        query,
+        update,
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
     return _present(doc)
 
 

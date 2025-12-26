@@ -73,23 +73,17 @@ async def _create(
             content_preview=content,
             reset_unread_admin=reset_unread,
         )
-        # Create a persisted notification when the user sends a message.
+        # Only one notification per conversation: upsert and refresh preview.
         if sender == "user" or role == "user":
             try:
                 session = await sessions_repo.get_session(session_id)
-                title = f"Conversation: {session.get('tenant_id') or 'Unknown'}"
                 preview = (content or "").strip()
                 message_preview = preview[:300] if preview else "User sent a message"
-                await notifications_repo.create_notification(
-                    title=title,
-                    message=message_preview,
-                    type_="info",
-                    module="conversation",
-                    target_name=session.get("tenant_id"),
-                    meta={
-                        "conversation_id": str(session.get("_id") or session_id),
-                        "conversation_code": session.get("conversation_id"),
-                    },
+                await notifications_repo.upsert_conversation_notification(
+                    session_id=str(session.get("_id") or session_id),
+                    conversation_code=session.get("conversation_id"),
+                    tenant_id=session.get("tenant_id"),
+                    message_preview=message_preview,
                 )
             except Exception:
                 # Notification creation should not break message flow.
