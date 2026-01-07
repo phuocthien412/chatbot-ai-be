@@ -12,6 +12,7 @@ from src.security.deps import RequestContext, auth_user, session_alive_guard
 from src.db.mongo import get_db
 from src.config import settings
 from src.services.events import broadcast_event
+from src.services.language_utils import normalize_language
 from src.repositories import sessions_repo
 from src.services.runtime_settings import (
     get_session_ttl_seconds,
@@ -38,6 +39,7 @@ def _check_rate_limit(ip: str) -> None:
 
 class StartRequest(BaseModel):
     tenant_id: Optional[str] = Field(None, description="Tenant id; default 'default'")
+    language: Optional[str] = Field(None, description="Language preference: vi|en|auto")
 
 class StartResponse(BaseModel):
     session_id: str
@@ -45,6 +47,7 @@ class StartResponse(BaseModel):
     expires_in: int
     tenant_id: str
     refresh_leeway_seconds: int
+    language: Optional[str] = None
 
 @router.post("/start", response_model=StartResponse)
 async def start(req: StartRequest, request: Request) -> StartResponse:
@@ -59,6 +62,7 @@ async def start(req: StartRequest, request: Request) -> StartResponse:
         pass
 
     tenant_id = (req.tenant_id or "default").strip() or "default"
+    language = normalize_language(req.language) or "auto"
 
     ttl = await get_session_ttl_seconds()
     leeway = await get_session_refresh_leeway_seconds()
@@ -79,6 +83,7 @@ async def start(req: StartRequest, request: Request) -> StartResponse:
         "last_sender": None,
         "unread_admin": 0,
         "handoff_mode": "bot",
+        "language": language,
     })
 
     # Mint user token bound to this session
@@ -92,6 +97,7 @@ async def start(req: StartRequest, request: Request) -> StartResponse:
         expires_in=ttl,
         tenant_id=tenant_id,
         refresh_leeway_seconds=leeway,
+        language=language,
     )
 
 class EndRequest(BaseModel):

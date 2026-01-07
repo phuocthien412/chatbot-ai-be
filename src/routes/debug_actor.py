@@ -22,6 +22,7 @@ from fastapi import APIRouter, Body, HTTPException
 from src.config import settings
 from src.services.intent_tools_picker import pick_tools
 from src.services.features_registry import get_provider
+from src.repositories import sessions_repo
 from src.services.chat_service import (  # reuse EXACT logic from actor flow
     _build_picker_history_messages as cs_build_picker_history_messages,
     _build_actor_messages as cs_build_actor_messages,
@@ -71,10 +72,15 @@ async def actor_preview_session(payload: Dict[str, Any] = Body(...)) -> Dict[str
     use_fallback = (not tools_spec) and bool(fallback_question)
 
     # ---------- PASS 2: build the ACTOR messages EXACTLY like chat_service ----------
+    session = await sessions_repo.get_session(session_id)
+    language = (session or {}).get("language")
+
     actor_messages = await cs_build_actor_messages(
         session_id,
         tools_spec if tools_spec else None,
         fallback_question if use_fallback else None,
+        None,
+        language,
     )
 
     # Pack the same metadata the actor call would use (no extra content added)

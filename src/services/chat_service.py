@@ -43,6 +43,7 @@ from src.services import runtime_settings
 from src.services.capabilities_banner import get_capabilities_banner_text
 from src.services.suggestions_extractor import extract_suggestions
 from src.services.prompt_loader import get_actor_prompt_header
+from src.services.language_utils import detect_language, normalize_language
 from src.services.events import broadcast_event
 
 logger = logging.getLogger("uvicorn.error")
@@ -84,6 +85,7 @@ async def _compose_actor_system_message(
     turn_tools_spec: Optional[List[dict]] = None,
     fallback_question: Optional[str] = None,
     provider_addendum: Optional[str] = None,
+    language: Optional[str] = None,
 ) -> str:
     """
     Build a SINGLE system message in this order:
@@ -97,7 +99,7 @@ async def _compose_actor_system_message(
     tools_block = "## Tools available this turn\n" + _summarize_tools_for_system(turn_tools_spec)
 
     # (2) Business/Profile header (already contains your core rules)
-    business_header = (get_actor_prompt_header() or "").strip()
+    business_header = (get_actor_prompt_header(language) or "").strip()
     business_block = business_header if business_header else ""
 
     # (3) Provider addendum (KB-only rules, etc.)
@@ -135,6 +137,7 @@ async def _build_actor_messages(
     tools_spec: Optional[List[dict]],
     fallback_question: Optional[str],
     provider_addendum: Optional[str],
+    language: Optional[str],
 ) -> List[dict]:
     """
     Exactly what the ACTOR uses:
@@ -144,7 +147,12 @@ async def _build_actor_messages(
     history = await messages_repo.list_messages(session_id)
 
     # single well-structured system message
-    system_msg = await _compose_actor_system_message(tools_spec, fallback_question, provider_addendum)
+    system_msg = await _compose_actor_system_message(
+        tools_spec,
+        fallback_question,
+        provider_addendum,
+        language=language,
+    )
 
     msgs: List[dict] = [{"role": "system", "content": system_msg}]
 
@@ -228,6 +236,17 @@ async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str
         session = await sessions_repo.create_session()
         session_id = session["_id"]
 
+    session_lang = normalize_language((session or {}).get("language"))
+    if session_lang in ("vi", "en"):
+        active_language = session_lang
+    else:
+        active_language = detect_language(user_text)
+        if session_lang is None:
+            try:
+                await sessions_repo.set_language(session_id, active_language)
+            except Exception:
+                pass
+
     user_doc = await messages_repo.create_user_message(session_id, user_text)
     # Broadcast user message immediately for realtime admin view
     try:
@@ -295,6 +314,7 @@ async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str
         tools_spec=tools_spec if tools_spec else None,
         fallback_question=fallback_question if not tools_spec else None,
         provider_addendum=provider_addendum,
+        language=active_language,
     )
     actor_model = _require_actor_model()
 

@@ -59,7 +59,7 @@ async def get_session(session_id: str) -> Optional[dict]:
     doc = await _ensure_conversation_id(doc)
     return _as_public(doc)
 
-async def create_session() -> dict:
+async def create_session(language: Optional[str] = None) -> dict:
     db = get_db()
     now = _now_utc()
     from src.services.runtime_settings import get_session_ttl_seconds
@@ -77,6 +77,8 @@ async def create_session() -> dict:
         "handoff_mode": "bot",
         "conversation_id": await _generate_conversation_id(),
     }
+    if language:
+        doc["language"] = language
     res = await db.sessions.insert_one(doc)
     doc["_id"] = res.inserted_id
     return _as_public(doc)
@@ -134,6 +136,15 @@ async def set_handoff_mode(session_id: str, mode: str, admin_id: Optional[str] =
     update = {"$set": {"handoff_mode": mode, "status": "active"}}
     if admin_id:
         update["$set"]["takeover_admin"] = admin_id
+    if oid is not None:
+        await db.sessions.update_one({"_id": oid}, update)
+    else:
+        await db.sessions.update_one({"_id": session_id}, update)
+
+async def set_language(session_id: str, language: str) -> None:
+    db = get_db()
+    oid = _to_oid(session_id)
+    update = {"$set": {"language": language}}
     if oid is not None:
         await db.sessions.update_one({"_id": oid}, update)
     else:

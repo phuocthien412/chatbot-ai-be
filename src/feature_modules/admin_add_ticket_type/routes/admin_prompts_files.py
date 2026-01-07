@@ -19,7 +19,7 @@ Safety:
 - Whitelist file names (profile|policies|glossary) ONLY.
 - Max content size: 5 KB.
 - Enforce UTF-8 text.
-- Write versioned backup into prompts/.versions/{name}-{ISO}.md before overwrite.
+- Write versioned files into prompts/.versions/{name}-vNNN-YYYY-MM-DD.md (no overwrite).
 - Never expose or edit system cores (system/actor.core.md, system/picker.core.md).
 """
 
@@ -58,6 +58,9 @@ def _iso_stamp() -> str:
     # Filename-safe ISO (no ':')
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(":", "_")
 
+def _date_stamp() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
 def _file_path_for(name: str) -> str:
     # Whitelisted names only
     if name not in ALLOWED_NAMES:
@@ -93,6 +96,59 @@ def _backup_file(name: str, content: str, note: Optional[str]) -> str:
     path = os.path.join(VERSIONS_DIR, filename)
     _write_utf8(path, content)
     return filename
+
+def _parse_version_filename(name: str, filename: str) -> Optional[Dict[str, Any]]:
+    pattern = rf"^{re.escape(name)}-v(\d+)-(\d{{4}}-\d{{2}}-\d{{2}})\.md$"
+    match = re.match(pattern, filename)
+    if not match:
+        return None
+    return {"version": int(match.group(1)), "version_date": match.group(2)}
+
+def _get_latest_version_info(name: str) -> Optional[Dict[str, Any]]:
+    try:
+        entries = os.listdir(VERSIONS_DIR)
+    except FileNotFoundError:
+        return None
+
+    latest: Optional[Dict[str, Any]] = None
+    for filename in entries:
+        parsed = _parse_version_filename(name, filename)
+        if not parsed:
+            continue
+        version = parsed["version"]
+        if latest is None or version > latest["version"]:
+            path = os.path.join(VERSIONS_DIR, filename)
+            try:
+                st = os.stat(path)
+            except FileNotFoundError:
+                continue
+            latest = {
+                "version": version,
+                "version_date": parsed["version_date"],
+                "version_file": filename,
+                "path": path,
+                "size": st.st_size,
+                "mtime": int(st.st_mtime),
+            }
+    return latest
+
+def _ensure_base_version(name: str) -> None:
+    if _get_latest_version_info(name):
+        return
+    path = _file_path_for(name)
+    if not os.path.isfile(path):
+        return
+    content = _read_utf8(path)
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return
+    date_stamp = datetime.fromtimestamp(st.st_mtime, timezone.utc).date().isoformat()
+    filename = f"{name}-v000-{date_stamp}.md"
+    version_path = os.path.join(VERSIONS_DIR, filename)
+    if os.path.exists(version_path):
+        return
+    _write_utf8(version_path, content)
 
 def _stat_info(path: str) -> Dict[str, Any]:
     try:
@@ -133,9 +189,31 @@ async def list_files(request: Request):
     _ensure_dirs()
     items: List[Dict[str, Any]] = []
     for name in sorted(ALLOWED_NAMES):
-        path = _file_path_for(name)
-        st = _stat_info(path)
-        items.append({"name": name, **st})
+        latest = _get_latest_version_info(name)
+        if latest:
+            items.append(
+                {
+                    "name": name,
+                    "exists": True,
+                    "size": latest["size"],
+                    "mtime": latest["mtime"],
+                    "version": latest["version"],
+                    "version_date": latest["version_date"],
+                    "version_file": latest["version_file"],
+                }
+            )
+        else:
+            path = _file_path_for(name)
+            st = _stat_info(path)
+            items.append(
+                {
+                    "name": name,
+                    **st,
+                    "version": None,
+                    "version_date": None,
+                    "version_file": None,
+                }
+            )
     return {
         "prompts_root": PROMPTS_ROOT,
         "business_dir": BUSINESS_DIR,
@@ -146,15 +224,33 @@ async def list_files(request: Request):
 async def read_file(name: str, request: Request):
     _enforce_auth_or_local(request)
     _ensure_dirs()
+    latest = _get_latest_version_info(name)
+    if latest:
+        content = _read_utf8(latest["path"])
+        return {
+            "name": name,
+            "content": content,
+            "size": len(content.encode("utf-8")),
+            "version": latest["version"],
+            "version_date": latest["version_date"],
+            "version_file": latest["version_file"],
+        }
     path = _file_path_for(name)
     content = _read_utf8(path)
-    return {"name": name, "content": content, "size": len(content.encode("utf-8"))}
+    return {
+        "name": name,
+        "content": content,
+        "size": len(content.encode("utf-8")),
+        "version": None,
+        "version_date": None,
+        "version_file": None,
+    }
 
 @router.put("/file/{name}")
 async def update_file(name: str, body: UpdateFileBody = Body(...), request: Request = None):
     _enforce_auth_or_local(request)
     _ensure_dirs()
-    path = _file_path_for(name)
+    _ensure_base_version(name)
 
     # Validate UTF-8 + size
     try:
@@ -164,11 +260,16 @@ async def update_file(name: str, body: UpdateFileBody = Body(...), request: Requ
     if len(raw) > MAX_BYTES:
         raise HTTPException(status_code=400, detail=f"Content too large (>{MAX_BYTES} bytes).")
 
-    # Read current for backup
-    current = _read_utf8(path)
-    backup_filename = _backup_file(name, current, note=f"before-{body.note or 'update'}") if current else None
+    latest = _get_latest_version_info(name)
+    next_version = (latest["version"] if latest else 0) + 1
+    date_stamp = _date_stamp()
+    filename = f"{name}-v{next_version:03d}-{date_stamp}.md"
+    path = os.path.join(VERSIONS_DIR, filename)
+    while os.path.exists(path):
+        next_version += 1
+        filename = f"{name}-v{next_version:03d}-{date_stamp}.md"
+        path = os.path.join(VERSIONS_DIR, filename)
 
-    # Overwrite
     _write_utf8(path, body.content)
 
     # Soft reload prompt cache (same as /admin/prompts/reload)
@@ -180,14 +281,16 @@ async def update_file(name: str, body: UpdateFileBody = Body(...), request: Requ
         type_="info",
         module="prompts",
         target_name=name,
-        meta={"bytes": len(raw)},
+        meta={"bytes": len(raw), "version": next_version, "version_file": filename},
     )
 
     return {
         "ok": True,
         "name": name,
         "bytes": len(raw),
-        "backup": backup_filename,
+        "backup": None,
+        "version": next_version,
+        "version_file": filename,
         "reloaded": True,
     }
 
@@ -228,18 +331,23 @@ async def rollback_file(body: RollbackBody = Body(...), request: Request = None)
     _enforce_auth_or_local(request)
     _ensure_dirs()
     # Validate backup filename shape to avoid path traversal
-    if not re.fullmatch(rf"{body.name}-[A-Za-z0-9T_\-]+\.md", body.backup):
+    if not re.fullmatch(rf"{body.name}-v\d+-\d{{4}}-\d{{2}}-\d{{2}}\.md", body.backup):
         raise HTTPException(status_code=400, detail="Invalid backup filename format.")
     backup_path = os.path.join(VERSIONS_DIR, body.backup)
     if not os.path.isfile(backup_path):
         raise HTTPException(status_code=404, detail="Backup not found.")
 
+    _ensure_base_version(body.name)
     content = _read_utf8(backup_path)
-    path = _file_path_for(body.name)
-    # Backup current before restore
-    current = _read_utf8(path)
-    backup_filename = _backup_file(body.name, current, note="before-rollback") if current else None
-
+    latest = _get_latest_version_info(body.name)
+    next_version = (latest["version"] if latest else 0) + 1
+    date_stamp = _date_stamp()
+    filename = f"{body.name}-v{next_version:03d}-{date_stamp}.md"
+    path = os.path.join(VERSIONS_DIR, filename)
+    while os.path.exists(path):
+        next_version += 1
+        filename = f"{body.name}-v{next_version:03d}-{date_stamp}.md"
+        path = os.path.join(VERSIONS_DIR, filename)
     _write_utf8(path, content)
     prompt_loader.reload()
 
@@ -249,7 +357,14 @@ async def rollback_file(body: RollbackBody = Body(...), request: Request = None)
         type_="warning",
         module="prompts",
         target_name=body.name,
-        meta={"backup": body.backup},
+        meta={"backup": body.backup, "version": next_version, "version_file": filename},
     )
 
-    return {"ok": True, "restored": body.name, "from": body.backup, "backup_of_previous": backup_filename}
+    return {
+        "ok": True,
+        "restored": body.name,
+        "from": body.backup,
+        "version": next_version,
+        "version_file": filename,
+        "backup_of_previous": None,
+    }
