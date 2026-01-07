@@ -33,6 +33,15 @@ class ChatBody(BaseModel):
     session_id: Optional[str] = None
     message: str
 
+
+def _is_internal_breadcrumb(msg: Dict[str, Any]) -> bool:
+    """
+    Detect internal system breadcrumbs like TOOL:create_ticket... so we don't push them to end-users.
+    """
+    role = str(msg.get("role") or "").lower()
+    content = str(msg.get("content") or "")
+    return role == "system" and content.startswith("TOOL:")
+
 @router.post("")
 async def post_chat(body: ChatBody = Body(...)) -> Dict[str, Any]:
     # Ensure session exists or create
@@ -95,6 +104,8 @@ async def post_chat(body: ChatBody = Body(...)) -> Dict[str, Any]:
         })
         for m in msgs:
             await broadcast_event({"type": "message.created", "data": m})
+            if _is_internal_breadcrumb(m):
+                continue  # do not expose internal breadcrumbs to end-users
             await broadcast_to_user(session_id, {"type": "message.created", "data": m})
     except Exception:
         pass

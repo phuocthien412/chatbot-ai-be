@@ -24,6 +24,19 @@ async def _get_session_or_404(session_id: str) -> Dict[str, Any]:
     return session
 
 
+def _filter_internal_system_breadcrumbs(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Hide internal system breadcrumbs (e.g., TOOL:create_ticket...) from admin portal views.
+    """
+    return [
+        m for m in messages
+        if not (
+            (m.get("role") or "").lower() == "system"
+            and str(m.get("content") or "").startswith("TOOL:")
+        )
+    ]
+
+
 @router.get("")
 async def list_conversations(
     status: Optional[str] = Query(None),
@@ -52,6 +65,7 @@ async def get_conversation(
     messages: List[Dict[str, Any]] = []
     if preview_messages:
         messages = await messages_repo.list_messages(session_id, limit=preview_limit)
+        messages = _filter_internal_system_breadcrumbs(messages)
     return {"session": session, "messages": messages}
 
 
@@ -63,6 +77,7 @@ async def get_conversation_messages(
 ) -> Dict[str, Any]:
     await _get_session_or_404(session_id)
     messages = await messages_repo.list_messages(session_id, limit=limit)
+    messages = _filter_internal_system_breadcrumbs(messages)
     return {"items": messages, "count": len(messages)}
 
 
@@ -106,6 +121,8 @@ async def send_conversation_message(
         await broadcast_event({"type": "message.created", "data": m})
         try:
             from src.services.user_events import broadcast_to_user
+            if (m.get("role") or "").lower() == "system" and str(m.get("content") or "").startswith("TOOL:"):
+                continue  # hide internal breadcrumbs from end-users
             await broadcast_to_user(session_id, {"type": "message.created", "data": m})
         except Exception:
             pass

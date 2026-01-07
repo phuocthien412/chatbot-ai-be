@@ -20,7 +20,8 @@ class DocListItem(BaseModel):
     file_id: str
     filename: Optional[str] = None
     bytes: Optional[int] = None
-    created_at: Optional[int] = None
+    status: Optional[str] = None
+    created_at: Optional[str] = None
 
 class DocListOut(BaseModel):
     ok: bool = True

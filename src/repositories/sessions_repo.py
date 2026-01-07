@@ -62,10 +62,14 @@ async def get_session(session_id: str) -> Optional[dict]:
 async def create_session() -> dict:
     db = get_db()
     now = _now_utc()
+    from src.services.runtime_settings import get_session_ttl_seconds
+    ttl = await get_session_ttl_seconds()
+    expires_at = now + timedelta(seconds=ttl)
     doc = {
         # no explicit _id: let Mongo assign ObjectId
         "status": "active",
         "created_at": now,
+        "expires_at": expires_at,
         "last_activity_at": now,
         "last_message_at": None,
         "last_sender": None,
@@ -178,6 +182,23 @@ async def list_sessions_raw(
     out = []
     async for s in cur:
         s = await _ensure_conversation_id(s)
+        # If expires_at đã qua và chưa ended/timeout, đánh dấu timeout
+        try:
+            expires_at = s.get("expires_at")
+            if isinstance(expires_at, datetime):
+                now = _now_utc()
+                if now >= expires_at and s.get("status") not in ("ended", "timeout"):
+                    s = dict(s)
+                    s["status"] = "timeout"
+                    try:
+                        await db.sessions.update_one(
+                            {"_id": s.get("_id")},
+                            {"$set": {"status": "timeout", "handoff_mode": "bot", "last_activity_at": now}},
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         out.append(_as_public(s))
     return out
 
