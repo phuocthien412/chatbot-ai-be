@@ -12,6 +12,7 @@ from .routes.admin_auth import router as admin_auth_router
 from .routes.chat import router as chat_router
 from .routes.files import router as files_router
 from .AI_tool_call_modules.info_search.routes import router as info_search_router
+from .AI_tool_call_modules.info_search.admin_routes import router as admin_info_search_router
 from .feature_modules.voice_input.routes import router as stt_router
 from .feature_modules.tts.routes import router as tts_router
 from .feature_modules.file_content.routes import router as file_content_router, admin_router as admin_file_content_router
@@ -67,6 +68,7 @@ _admin_protect = [Depends(admin_guard)]
 app.include_router(chat_router, dependencies=_protect)
 app.include_router(files_router, dependencies=_protect)
 app.include_router(info_search_router, dependencies=_protect)
+app.include_router(admin_info_search_router, dependencies=_admin_protect)
 app.include_router(stt_router, dependencies=_protect)
 app.include_router(tts_router, dependencies=_protect)
 
