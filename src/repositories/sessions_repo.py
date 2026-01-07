@@ -150,13 +150,16 @@ async def set_language(session_id: str, language: str) -> None:
     else:
         await db.sessions.update_one({"_id": session_id}, update)
 
-async def mark_inactive(session_id: str) -> None:
-    """Mark session as inactive (end conversation)."""
+async def mark_inactive(session_id: str, status: str = "ended") -> None:
+    """Mark session as inactive (end conversation or timeout)."""
     db = get_db()
     oid = _to_oid(session_id)
+    # Validate status
+    if status not in ("ended", "timeout"):
+        status = "ended"
     update = {
         "$set": {
-            "status": "ended",
+            "status": status,
             "handoff_mode": "bot",
             "last_activity_at": _now_utc(),
         }
@@ -193,21 +196,24 @@ async def list_sessions_raw(
     out = []
     async for s in cur:
         s = await _ensure_conversation_id(s)
-        # If expires_at đã qua và chưa ended/timeout, đánh dấu timeout
+        # If expires_at đã qua và status vẫn là active (chưa ended/timeout), đánh dấu timeout
         try:
-            expires_at = s.get("expires_at")
-            if isinstance(expires_at, datetime):
-                now = _now_utc()
-                if now >= expires_at and s.get("status") not in ("ended", "timeout"):
-                    s = dict(s)
-                    s["status"] = "timeout"
-                    try:
-                        await db.sessions.update_one(
-                            {"_id": s.get("_id")},
-                            {"$set": {"status": "timeout", "handoff_mode": "bot", "last_activity_at": now}},
-                        )
-                    except Exception:
-                        pass
+            current_status = s.get("status", "active")
+            # Preserve "ended" status - don't overwrite it with "timeout"
+            if current_status == "active":
+                expires_at = s.get("expires_at")
+                if isinstance(expires_at, datetime):
+                    now = _now_utc()
+                    if now >= expires_at:
+                        s = dict(s)
+                        s["status"] = "timeout"
+                        try:
+                            await db.sessions.update_one(
+                                {"_id": s.get("_id")},
+                                {"$set": {"status": "timeout", "handoff_mode": "bot", "last_activity_at": now}},
+                            )
+                        except Exception:
+                            pass
         except Exception:
             pass
         out.append(_as_public(s))

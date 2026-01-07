@@ -102,6 +102,7 @@ async def start(req: StartRequest, request: Request) -> StartResponse:
 
 class EndRequest(BaseModel):
   session_id: str
+  status: Optional[str] = Field("ended", pattern="^(ended|timeout)$")
 
 @router.post("/end")
 async def end_session(
@@ -110,24 +111,26 @@ async def end_session(
     _=Depends(session_alive_guard),
 ):
     """
-    Mark a session as inactive when user resets conversation.
+    Mark a session as inactive when user resets conversation or when timeout.
     Only the owner of the session (JWT.sid) may end it.
+    status: 'ended' (user reset) or 'timeout' (expired)
     """
     if req.session_id != ctx.sid:
         raise HTTPException(status_code=403, detail="session_id mismatch")
-    await sessions_repo.mark_inactive(req.session_id)
+    final_status = req.status if req.status in ("ended", "timeout") else "ended"
+    await sessions_repo.mark_inactive(req.session_id, status=final_status)
     try:
         await broadcast_event({
             "type": "conversation.updated",
             "data": {
                 "session_id": req.session_id,
-                "status": "ended",
+                "status": final_status,
                 "handoff_mode": "bot",
             },
         })
     except Exception:
         pass
-    return {"ok": True, "status": "ended", "session_id": req.session_id}
+    return {"ok": True, "status": final_status, "session_id": req.session_id}
 
 
 @router.post("/refresh", response_model=StartResponse)
