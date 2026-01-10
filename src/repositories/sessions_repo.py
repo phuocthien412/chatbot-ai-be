@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 import time
 from bson import ObjectId
@@ -39,6 +39,8 @@ async def _generate_conversation_id() -> str:
 async def _ensure_conversation_id(doc: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not doc:
         return doc
+    if doc.get("purpose") == "debug":
+        return doc
     if doc.get("conversation_id"):
         return doc
     conv_id = await _generate_conversation_id()
@@ -59,7 +61,7 @@ async def get_session(session_id: str) -> Optional[dict]:
     doc = await _ensure_conversation_id(doc)
     return _as_public(doc)
 
-async def create_session(language: Optional[str] = None) -> dict:
+async def create_session(language: Optional[str] = None, purpose: Optional[str] = None) -> dict:
     db = get_db()
     now = _now_utc()
     from src.services.runtime_settings import get_session_ttl_seconds
@@ -75,10 +77,13 @@ async def create_session(language: Optional[str] = None) -> dict:
         "last_sender": None,
         "unread_admin": 0,
         "handoff_mode": "bot",
-        "conversation_id": await _generate_conversation_id(),
     }
     if language:
         doc["language"] = language
+    if purpose:
+        doc["purpose"] = purpose
+    if purpose != "debug":
+        doc["conversation_id"] = await _generate_conversation_id()
     res = await db.sessions.insert_one(doc)
     doc["_id"] = res.inserted_id
     return _as_public(doc)
@@ -150,6 +155,7 @@ async def set_language(session_id: str, language: str) -> None:
     else:
         await db.sessions.update_one({"_id": session_id}, update)
 
+
 async def mark_inactive(session_id: str, status: str = "ended") -> None:
     """Mark session as inactive (end conversation or timeout)."""
     db = get_db()
@@ -179,6 +185,7 @@ async def list_sessions_raw(
     handoff_mode: Optional[str] = None,
     limit: int = 50,
     search: Optional[str] = None,
+    include_debug: bool = False,
 ) -> list:
     db = get_db()
     query: Dict[str, Any] = {}
@@ -188,6 +195,8 @@ async def list_sessions_raw(
         query["handoff_mode"] = handoff_mode
     if search:
         query["conversation_id"] = {"$regex": search, "$options": "i"}
+    if not include_debug:
+        query["purpose"] = {"$ne": "debug"}
     cur = (
         db.sessions.find(query)
         .sort([("created_at", -1)])

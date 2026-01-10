@@ -224,6 +224,7 @@ def _tool_name_to_type_id(tool_name: str) -> Optional[str]:
         return None
     return tool_name.split("create_ticket__", 1)[1] or None
 
+
 # ---------------------------- main turn ----------------------------
 
 async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str]]:

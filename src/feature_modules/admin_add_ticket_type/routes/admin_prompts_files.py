@@ -1,11 +1,14 @@
 from __future__ import annotations
 """
-Admin API for editing business prompt files (file-backed, safe, simple).
+Admin API for editing business and system prompt files (file-backed, safe, simple).
 
 Endpoints
 - GET  /admin/prompts/files
 - GET  /admin/prompts/file/{name}            (name ∈ {"profile","policies","glossary"})
 - PUT  /admin/prompts/file/{name}            body: {"content": "…", "note": "optional"}
+- GET  /admin/prompts/system/files
+- GET  /admin/prompts/system/file/{name}     (name ∈ {"actor.core","picker.core"})
+- PUT  /admin/prompts/system/file/{name}     body: {"content": "…", "note": "optional"}
 - POST /admin/prompts/reload                 (already exists elsewhere; we call loader.reload() here too)
 - POST /admin/prompts/preview                -> {"actor_preview","picker_preview"}
 - POST /admin/prompts/rollback               body: {"name":"profile","backup":"profile-2025-09-26T10_12_00Z.md"}
@@ -20,7 +23,7 @@ Safety:
 - Max content size: 5 KB.
 - Enforce UTF-8 text.
 - Write versioned files into prompts/.versions/{name}-vNNN-YYYY-MM-DD.md (no overwrite).
-- Never expose or edit system cores (system/actor.core.md, system/picker.core.md).
+- System cores are editable via /admin/prompts/system/* with versioning.
 """
 
 import os
@@ -43,9 +46,12 @@ PROMPTS_ROOT = os.environ.get("PROMPTS_ROOT", os.path.join(os.getcwd(), "prompts
 BUSINESS_DIR = os.path.join(PROMPTS_ROOT, "business")
 SYSTEM_DIR = os.path.join(PROMPTS_ROOT, "system")
 VERSIONS_DIR = os.path.join(PROMPTS_ROOT, ".versions")
+SYSTEM_VERSIONS_DIR = os.path.join(VERSIONS_DIR, "system")
 
 ALLOWED_NAMES = {"profile", "policies", "glossary"}
+SYSTEM_NAMES = {"actor.core", "picker.core"}
 MAX_BYTES = 5 * 1024  # 5 KB
+MAX_SYSTEM_BYTES = 20 * 1024  # 20 KB
 ADMIN_KEY = os.environ.get("ADMIN_KEY")  # optional
 
 # ---------- Helpers ----------
@@ -53,6 +59,7 @@ def _ensure_dirs() -> None:
     os.makedirs(BUSINESS_DIR, exist_ok=True)
     os.makedirs(SYSTEM_DIR, exist_ok=True)
     os.makedirs(VERSIONS_DIR, exist_ok=True)
+    os.makedirs(SYSTEM_VERSIONS_DIR, exist_ok=True)
 
 def _iso_stamp() -> str:
     # Filename-safe ISO (no ':')
@@ -66,6 +73,11 @@ def _file_path_for(name: str) -> str:
     if name not in ALLOWED_NAMES:
         raise HTTPException(status_code=400, detail=f"Invalid name. Allowed: {sorted(ALLOWED_NAMES)}")
     return os.path.join(BUSINESS_DIR, f"{name}.md")
+
+def _system_file_path(name: str) -> str:
+    if name not in SYSTEM_NAMES:
+        raise HTTPException(status_code=400, detail=f"Invalid system name. Allowed: {sorted(SYSTEM_NAMES)}")
+    return os.path.join(SYSTEM_DIR, f"{name}.md")
 
 def _read_utf8(path: str) -> str:
     try:
@@ -104,6 +116,13 @@ def _parse_version_filename(name: str, filename: str) -> Optional[Dict[str, Any]
         return None
     return {"version": int(match.group(1)), "version_date": match.group(2)}
 
+def _parse_system_version_filename(name: str, filename: str) -> Optional[Dict[str, Any]]:
+    pattern = rf"^system-{re.escape(name)}-v(\d+)-(\d{{4}}-\d{{2}}-\d{{2}})\.md$"
+    match = re.match(pattern, filename)
+    if not match:
+        return None
+    return {"version": int(match.group(1)), "version_date": match.group(2)}
+
 def _get_latest_version_info(name: str) -> Optional[Dict[str, Any]]:
     try:
         entries = os.listdir(VERSIONS_DIR)
@@ -132,6 +151,34 @@ def _get_latest_version_info(name: str) -> Optional[Dict[str, Any]]:
             }
     return latest
 
+def _get_latest_system_version_info(name: str) -> Optional[Dict[str, Any]]:
+    try:
+        entries = os.listdir(SYSTEM_VERSIONS_DIR)
+    except FileNotFoundError:
+        return None
+
+    latest: Optional[Dict[str, Any]] = None
+    for filename in entries:
+        parsed = _parse_system_version_filename(name, filename)
+        if not parsed:
+            continue
+        version = parsed["version"]
+        if latest is None or version > latest["version"]:
+            path = os.path.join(SYSTEM_VERSIONS_DIR, filename)
+            try:
+                st = os.stat(path)
+            except FileNotFoundError:
+                continue
+            latest = {
+                "version": version,
+                "version_date": parsed["version_date"],
+                "version_file": filename,
+                "path": path,
+                "size": st.st_size,
+                "mtime": int(st.st_mtime),
+            }
+    return latest
+
 def _ensure_base_version(name: str) -> None:
     if _get_latest_version_info(name):
         return
@@ -146,6 +193,24 @@ def _ensure_base_version(name: str) -> None:
     date_stamp = datetime.fromtimestamp(st.st_mtime, timezone.utc).date().isoformat()
     filename = f"{name}-v000-{date_stamp}.md"
     version_path = os.path.join(VERSIONS_DIR, filename)
+    if os.path.exists(version_path):
+        return
+    _write_utf8(version_path, content)
+
+def _ensure_system_base_version(name: str) -> None:
+    if _get_latest_system_version_info(name):
+        return
+    path = _system_file_path(name)
+    if not os.path.isfile(path):
+        return
+    content = _read_utf8(path)
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return
+    date_stamp = datetime.fromtimestamp(st.st_mtime, timezone.utc).date().isoformat()
+    filename = f"system-{name}-v000-{date_stamp}.md"
+    version_path = os.path.join(SYSTEM_VERSIONS_DIR, filename)
     if os.path.exists(version_path):
         return
     _write_utf8(version_path, content)
@@ -224,33 +289,128 @@ async def list_files(request: Request):
 async def read_file(name: str, request: Request):
     _enforce_auth_or_local(request)
     _ensure_dirs()
-    latest = _get_latest_version_info(name)
-    if latest:
-        content = _read_utf8(latest["path"])
-        return {
-            "name": name,
-            "content": content,
-            "size": len(content.encode("utf-8")),
-            "version": latest["version"],
-            "version_date": latest["version_date"],
-            "version_file": latest["version_file"],
-        }
     path = _file_path_for(name)
     content = _read_utf8(path)
+    latest = _get_latest_version_info(name)
     return {
         "name": name,
         "content": content,
         "size": len(content.encode("utf-8")),
-        "version": None,
-        "version_date": None,
-        "version_file": None,
+        "version": latest["version"] if latest else None,
+        "version_date": latest["version_date"] if latest else None,
+        "version_file": latest["version_file"] if latest else None,
+    }
+
+
+@router.get("/system/files")
+async def list_system_files(request: Request):
+    _enforce_auth_or_local(request)
+    _ensure_dirs()
+    items: List[Dict[str, Any]] = []
+    for name in sorted(SYSTEM_NAMES):
+        latest = _get_latest_system_version_info(name)
+        if latest:
+            items.append(
+                {
+                    "name": name,
+                    "exists": True,
+                    "size": latest["size"],
+                    "mtime": latest["mtime"],
+                    "version": latest["version"],
+                    "version_date": latest["version_date"],
+                    "version_file": latest["version_file"],
+                }
+            )
+        else:
+            path = _system_file_path(name)
+            st = _stat_info(path)
+            items.append(
+                {
+                    "name": name,
+                    **st,
+                    "version": None,
+                    "version_date": None,
+                    "version_file": None,
+                }
+            )
+    return {
+        "prompts_root": PROMPTS_ROOT,
+        "system_dir": SYSTEM_DIR,
+        "files": items,
+    }
+
+
+@router.get("/system/file/{name}")
+async def read_system_file(name: str, request: Request):
+    _enforce_auth_or_local(request)
+    _ensure_dirs()
+    path = _system_file_path(name)
+    content = _read_utf8(path)
+    latest = _get_latest_system_version_info(name)
+    return {
+        "name": name,
+        "content": content,
+        "size": len(content.encode("utf-8")),
+        "version": latest["version"] if latest else None,
+        "version_date": latest["version_date"] if latest else None,
+        "version_file": latest["version_file"] if latest else None,
+    }
+
+
+@router.put("/system/file/{name}")
+async def update_system_file(name: str, body: UpdateFileBody = Body(...), request: Request = None):
+    _enforce_auth_or_local(request)
+    _ensure_dirs()
+
+    try:
+        raw = body.content.encode("utf-8")
+    except UnicodeEncodeError:
+        raise HTTPException(status_code=400, detail="Content must be valid UTF-8 text.")
+    if len(raw) > MAX_SYSTEM_BYTES:
+        raise HTTPException(status_code=400, detail=f"Content too large (>{MAX_SYSTEM_BYTES} bytes).")
+
+    latest = _get_latest_system_version_info(name)
+    next_version = (latest["version"] if latest else 0) + 1
+    date_stamp = _date_stamp()
+    filename = f"system-{name}-v{next_version:03d}-{date_stamp}.md"
+    path = os.path.join(SYSTEM_VERSIONS_DIR, filename)
+    while os.path.exists(path):
+        next_version += 1
+        filename = f"system-{name}-v{next_version:03d}-{date_stamp}.md"
+        path = os.path.join(SYSTEM_VERSIONS_DIR, filename)
+
+    # Save current active file as versioned backup
+    active_path = _system_file_path(name)
+    old_content = _read_utf8(active_path)
+    _write_utf8(path, old_content)
+
+    # Overwrite active file with new content
+    _write_utf8(active_path, body.content)
+    prompt_loader.reload()
+
+    await log_notification(
+        title=f"System prompt '{name}' updated",
+        message=body.note or "System prompt content was updated.",
+        type_="info",
+        module="prompts",
+        target_name=f"system:{name}",
+        meta={"bytes": len(raw), "version": next_version, "version_file": filename},
+    )
+
+    return {
+        "ok": True,
+        "name": name,
+        "bytes": len(raw),
+        "backup": None,
+        "version": next_version,
+        "version_file": filename,
+        "reloaded": True,
     }
 
 @router.put("/file/{name}")
 async def update_file(name: str, body: UpdateFileBody = Body(...), request: Request = None):
     _enforce_auth_or_local(request)
     _ensure_dirs()
-    _ensure_base_version(name)
 
     # Validate UTF-8 + size
     try:
@@ -270,7 +430,13 @@ async def update_file(name: str, body: UpdateFileBody = Body(...), request: Requ
         filename = f"{name}-v{next_version:03d}-{date_stamp}.md"
         path = os.path.join(VERSIONS_DIR, filename)
 
-    _write_utf8(path, body.content)
+    # Save current active file as versioned backup
+    active_path = _file_path_for(name)
+    old_content = _read_utf8(active_path)
+    _write_utf8(path, old_content)
+
+    # Overwrite active file with new content
+    _write_utf8(active_path, body.content)
 
     # Soft reload prompt cache (same as /admin/prompts/reload)
     prompt_loader.reload()

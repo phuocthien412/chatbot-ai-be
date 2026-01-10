@@ -50,7 +50,9 @@ async def list_conversations(
         handoff_mode=handoff_mode,
         limit=limit,
         search=search,
+        include_debug=False,
     )
+    sessions = [s for s in sessions if s.get("conversation_id")]
     return {"items": sessions, "count": len(sessions)}
 
 

@@ -17,13 +17,13 @@ router = APIRouter(prefix="/admin/settings", tags=["admin.settings"])
 
 class RequestTimeoutResponse(BaseModel):
     request_timeout_seconds: int = Field(..., ge=5, le=600)
-    session_ttl_seconds: int = Field(..., ge=300, le=86_400)
+    session_ttl_seconds: int = Field(..., ge=60, le=86_400)
     session_refresh_leeway_seconds: int = Field(..., ge=10, le=600)
 
 
 class RequestTimeoutBody(BaseModel):
     request_timeout_seconds: int = Field(..., ge=5, le=600, description="LLM request timeout (seconds)")
-    session_ttl_seconds: int = Field(..., ge=300, le=86_400, description="Session TTL for user tokens (seconds)")
+    session_ttl_seconds: int = Field(..., ge=60, le=86_400, description="Session TTL for user tokens (seconds)")
     session_refresh_leeway_seconds: int = Field(..., ge=10, le=600, description="Proactive refresh lead time (seconds)")
 
 

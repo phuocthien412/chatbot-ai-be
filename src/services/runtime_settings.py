@@ -32,7 +32,7 @@ def _safe_session_ttl(value: int) -> int:
         v = int(value)
     except Exception:
         v = 1800
-    return max(300, min(v, 86_400))
+    return max(60, min(v, 86_400))
 
 
 def _safe_refresh_leeway(value: int) -> int:

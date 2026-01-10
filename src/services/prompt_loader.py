@@ -26,6 +26,7 @@ from src.services.language_utils import language_directive, normalize_language
 # Root of the prompts directory (env override supported)
 _PROMPTS_ROOT = os.environ.get("PROMPTS_ROOT", os.path.join(os.getcwd(), "prompts"))
 _VERSIONS_DIR = os.path.join(_PROMPTS_ROOT, ".versions")
+_SYSTEM_VERSIONS_DIR = os.path.join(_VERSIONS_DIR, "system")
 
 _TTL_SEC = 30.0
 
@@ -72,6 +73,25 @@ def _latest_versioned_path(name: str) -> Optional[str]:
             latest_path = os.path.join(_VERSIONS_DIR, filename)
     return latest_path
 
+def _latest_system_versioned_path(name: str) -> Optional[str]:
+    try:
+        entries = os.listdir(_SYSTEM_VERSIONS_DIR)
+    except FileNotFoundError:
+        return None
+
+    pattern = re.compile(rf"^system-{re.escape(name)}-v(\d+)-(\d{{4}}-\d{{2}}-\d{{2}})\.md$")
+    latest_version = None
+    latest_path = None
+    for filename in entries:
+        match = pattern.match(filename)
+        if not match:
+            continue
+        version = int(match.group(1))
+        if latest_version is None or version > latest_version:
+            latest_version = version
+            latest_path = os.path.join(_SYSTEM_VERSIONS_DIR, filename)
+    return latest_path
+
 def _read_business_prompt(name: str) -> str:
     latest_path = _latest_versioned_path(name)
     if latest_path:
@@ -83,8 +103,14 @@ def _refresh_cache_if_needed() -> None:
     if _CACHE["expires"] > _now():
         return
 
-    actor_core = _safe_read(os.path.join(_PROMPTS_ROOT, "system", "actor.core.md"))
-    picker_core = _safe_read(os.path.join(_PROMPTS_ROOT, "system", "picker.core.md"))
+    actor_core = _safe_read(
+        _latest_system_versioned_path("actor.core")
+        or os.path.join(_PROMPTS_ROOT, "system", "actor.core.md")
+    )
+    picker_core = _safe_read(
+        _latest_system_versioned_path("picker.core")
+        or os.path.join(_PROMPTS_ROOT, "system", "picker.core.md")
+    )
     profile = _read_business_prompt("profile")
     policies = _read_business_prompt("policies")
     glossary = _read_business_prompt("glossary")
