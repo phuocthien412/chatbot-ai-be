@@ -16,6 +16,9 @@ def _present(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Convert internal Mongo doc to API-friendly dict."""
     if not doc:
         return {}
+    created_at = doc.get("created_at")
+    if isinstance(created_at, datetime):
+        created_at = created_at.isoformat()
     return {
         "id": str(doc.get("_id")),
         "title": doc.get("title"),
@@ -23,7 +26,7 @@ def _present(doc: Dict[str, Any]) -> Dict[str, Any]:
         "type": doc.get("type"),
         "module": doc.get("module"),
         "is_read": bool(doc.get("is_read")),
-        "created_at": doc.get("created_at"),
+        "created_at": created_at,
         "target_name": doc.get("target_name"),
         "meta": doc.get("meta") or {},
     }

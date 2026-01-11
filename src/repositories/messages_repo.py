@@ -18,6 +18,7 @@ from bson import ObjectId
 
 from ..db.mongo import get_db
 from . import sessions_repo, notifications_repo
+from ..services.events import broadcast_event
 
 # --- internal helpers ---------------------------------------------------------
 
@@ -79,12 +80,16 @@ async def _create(
                 session = await sessions_repo.get_session(session_id)
                 preview = (content or "").strip()
                 message_preview = preview[:300] if preview else "User sent a message"
-                await notifications_repo.upsert_conversation_notification(
+                notif = await notifications_repo.upsert_conversation_notification(
                     session_id=str(session.get("_id") or session_id),
                     conversation_code=session.get("conversation_id"),
                     tenant_id=session.get("tenant_id"),
                     message_preview=message_preview,
                 )
+                try:
+                    await broadcast_event({"type": "notification.created", "data": notif})
+                except Exception:
+                    pass
             except Exception:
                 # Notification creation should not break message flow.
                 pass

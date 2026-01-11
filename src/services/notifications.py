@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from ..repositories import notifications_repo
+from .events import broadcast_event
 
 
 async def log_notification(
@@ -24,7 +25,7 @@ async def log_notification(
         target_name: Optional target identifier.
         meta: Optional extra data for future UI use.
     """
-    return await notifications_repo.create_notification(
+    doc = await notifications_repo.create_notification(
         title=title,
         message=message,
         type_=type_,
@@ -32,3 +33,8 @@ async def log_notification(
         target_name=target_name,
         meta=meta,
     )
+    try:
+        await broadcast_event({"type": "notification.created", "data": doc})
+    except Exception:
+        pass
+    return doc
