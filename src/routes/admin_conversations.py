@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any, List
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, WebSocket
 from pydantic import BaseModel, Field
 
@@ -10,6 +11,7 @@ from src.services.events import manager as ws_manager, broadcast_event
 from src.security.jwt import verify_jwt
 
 router = APIRouter(prefix="/admin/conversations", tags=["admin.conversations"])
+logger = logging.getLogger(__name__)
 
 
 class SendMessageBody(BaseModel):
@@ -180,12 +182,18 @@ async def conversations_ws(websocket: WebSocket):
     if not token:
         await websocket.close(code=4401)
         return
+    if token.lower().startswith("bearer "):
+        token = token.split(" ", 1)[1].strip()
+        if not token:
+            await websocket.close(code=4401)
+            return
     try:
         payload = verify_jwt(token)
         if payload.get("role") != "admin":
             await websocket.close(code=4403)
             return
-    except Exception:
+    except Exception as exc:
+        logger.warning("Admin WS token verify failed: %s", exc)
         await websocket.close(code=4401)
         return
 
