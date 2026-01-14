@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from src.security.deps import RequestContext, admin_guard
+from src.security.permissions import ensure_permission
 from src.repositories.admin_users_repo import (
     get_admin_by_email,
     get_admin_by_id,
@@ -96,6 +97,7 @@ def _to_profile(doc: dict) -> AdminProfile:
 
 @router.get("/me", response_model=AdminProfile)
 async def get_profile(ctx: RequestContext = Depends(admin_guard)) -> AdminProfile:
+    await ensure_permission(ctx, "profile", "view")
     user = await _load_admin(ctx)
     return _to_profile(user)
 
@@ -105,6 +107,7 @@ async def update_profile(
     payload: UpdateProfilePayload,
     ctx: RequestContext = Depends(admin_guard),
 ) -> AdminProfile:
+    await ensure_permission(ctx, "profile", "edit")
     user = await _load_admin(ctx)
     updated = await update_admin_profile(
         user.get("_id"),
@@ -121,6 +124,7 @@ async def change_password(
     payload: ChangePasswordPayload,
     ctx: RequestContext = Depends(admin_guard),
 ) -> dict:
+    await ensure_permission(ctx, "profile", "edit")
     user = await _load_admin(ctx)
     stored_hash = user.get("password_hash") or ""
     if not stored_hash or not verify_password(payload.current_password, stored_hash):

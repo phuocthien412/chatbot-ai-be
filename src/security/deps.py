@@ -23,6 +23,8 @@ except Exception:
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+ADMIN_ROLES = {"super_admin", "admin", "owner", "dev", "user"}
+
 @dataclass
 class RequestContext:
     sub: str
@@ -53,9 +55,19 @@ async def auth_user(
         raw=payload,
     )
 
+def _is_admin_role(role: str) -> bool:
+    return role in ADMIN_ROLES
+
+
 async def admin_guard(ctx: RequestContext = Depends(auth_user)) -> RequestContext:
-    if ctx.role != "admin":
+    if not _is_admin_role(ctx.role):
         raise HTTPException(status_code=403, detail="Admin only")
+    return ctx
+
+
+async def super_admin_guard(ctx: RequestContext = Depends(admin_guard)) -> RequestContext:
+    if ctx.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Super admin only")
     return ctx
 
 # Admin guard variant that also accepts ?token=... (used by admin file preview URLs)
@@ -74,7 +86,7 @@ async def admin_guard_allow_query(
         payload = verify_jwt(token)
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {type(e).__name__}")
-    if payload.get("role") != "admin":
+    if not _is_admin_role(payload.get("role", "")):
         raise HTTPException(status_code=403, detail="Admin only")
     return RequestContext(
         sub=payload.get("sub", "admin"),

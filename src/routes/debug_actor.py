@@ -17,9 +17,10 @@ Important:
 """
 
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Depends
 
 from src.config import settings
+from src.services import runtime_settings
 from src.services.intent_tools_picker import pick_tools
 from src.services.features_registry import get_provider
 from src.repositories import sessions_repo
@@ -28,6 +29,8 @@ from src.services.chat_service import (  # reuse EXACT logic from actor flow
     _build_actor_messages as cs_build_actor_messages,
 )
 import json
+from src.security.deps import RequestContext, admin_guard
+from src.security.permissions import ensure_permission
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 
@@ -43,7 +46,8 @@ def _compact_tool_names(tools_spec: Optional[List[Dict[str, Any]]]) -> List[str]
 
 
 @router.post("/actor-preview-session")
-async def actor_preview_session(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+async def actor_preview_session(payload: Dict[str, Any] = Body(...), ctx: RequestContext = Depends(admin_guard)) -> Dict[str, Any]:
+    await ensure_permission(ctx, "debug", "run")
     session_id = payload.get("session_id")
     if not session_id or not isinstance(session_id, str):
         raise HTTPException(400, "session_id is required")
@@ -84,6 +88,7 @@ async def actor_preview_session(payload: Dict[str, Any] = Body(...)) -> Dict[str
     )
 
     # Pack the same metadata the actor call would use (no extra content added)
+    actor_model = await runtime_settings.get_openai_model_actor()
     return {
         "picker_phase": {
             "picker_history_variant": "raw_no_banner",
@@ -98,7 +103,7 @@ async def actor_preview_session(payload: Dict[str, Any] = Body(...)) -> Dict[str
             ),
             "fallback_question_injected": use_fallback,
             "openai_payload_preview": {
-                "model": settings.openai_model,
+                "model": actor_model,
                 "temperature": 0.2,
                 "tool_choice": ("auto" if tools_spec else None),
             },

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 - POST /admin/auth/login
   Body: { "email": "admin@example.com", "password": "..." }
-  -> Issues a JWT with role="admin" and returns basic profile info.
+  -> Issues a JWT with the user's role and returns basic profile info.
 
 - POST /admin/auth/logout
   -> Stateless logout: always returns {"ok": true} when the token is valid.
@@ -25,6 +25,15 @@ from src.repositories.admin_users_repo import (
 
 
 router = APIRouter(prefix="/admin/auth", tags=["admin-auth"])
+
+ALLOWED_ROLES = {"super_admin", "admin", "owner", "dev", "user"}
+
+
+def _normalize_role(value: Optional[str]) -> str:
+    if not value:
+        return "admin"
+    role = str(value).strip().lower().replace(" ", "_").replace("-", "_")
+    return role if role in ALLOWED_ROLES else "admin"
 
 
 class LoginRequest(BaseModel):
@@ -69,11 +78,15 @@ async def admin_login(payload: LoginRequest) -> LoginResponse:
     sid = f"admin:{user.get('_id')}"
     tid = "admin"
 
+    roles = user.get("roles") or []
+    role_value = roles[0] if roles else user.get("role")
+    role = _normalize_role(role_value)
+
     token = issue_jwt(
         sub=sub,
         sid=sid,
         tid=tid,
-        role="admin",
+        role=role,
         ttl_seconds=effective_ttl,
     )
 
@@ -82,7 +95,7 @@ async def admin_login(payload: LoginRequest) -> LoginResponse:
 
     return LoginResponse(
         token=token,
-        role="admin",
+        role=role,
         email=user.get("email"),  # already normalized
         display_name=user.get("display_name") or user.get("email"),
         expires_in=effective_ttl,

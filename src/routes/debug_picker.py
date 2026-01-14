@@ -23,7 +23,7 @@ Debug endpoints for the picker.
 """
 
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Depends
 
 from src.db.mongo import get_db
 from src.services.features_registry import get_provider, all_providers, register
@@ -33,6 +33,8 @@ from src.repositories import messages_repo
 from src.repositories import debug_sessions_repo, debug_messages_repo
 from src.services.intent_tools_picker import pick_tools, build_picker_prompt
 from src.services.chat_service import _compose_actor_system_message
+from src.security.deps import RequestContext, admin_guard
+from src.security.permissions import ensure_permission
 
 router = APIRouter(prefix="/debug", tags=["debug"])
 
@@ -139,7 +141,8 @@ async def _build_actor_messages_from_messages(
 
 
 @router.post("/picker-preview")
-async def picker_preview(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+async def picker_preview(payload: Dict[str, Any] = Body(...), ctx: RequestContext = Depends(admin_guard)) -> Dict[str, Any]:
+    await ensure_permission(ctx, "debug", "run")
     user_text = payload.get("user_text")
     if not user_text or not isinstance(user_text, str):
         raise HTTPException(400, "user_text is required")
@@ -148,7 +151,8 @@ async def picker_preview(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
 
 
 @router.post("/picker-preview-session")
-async def picker_preview_session(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+async def picker_preview_session(payload: Dict[str, Any] = Body(...), ctx: RequestContext = Depends(admin_guard)) -> Dict[str, Any]:
+    await ensure_permission(ctx, "debug", "run")
     session_id = payload.get("session_id")
     if not session_id or not isinstance(session_id, str):
         raise HTTPException(400, "session_id is required")
@@ -161,13 +165,15 @@ async def picker_preview_session(payload: Dict[str, Any] = Body(...)) -> Dict[st
 
 
 @router.post("/session/start")
-async def debug_session_start() -> Dict[str, Any]:
+async def debug_session_start(ctx: RequestContext = Depends(admin_guard)) -> Dict[str, Any]:
+    await ensure_permission(ctx, "debug", "run")
     session = await debug_sessions_repo.create_session()
     return {"session_id": session["_id"]}
 
 
 @router.post("/picker-actor-run")
-async def picker_actor_run(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+async def picker_actor_run(payload: Dict[str, Any] = Body(...), ctx: RequestContext = Depends(admin_guard)) -> Dict[str, Any]:
+    await ensure_permission(ctx, "debug", "run")
     user_text = payload.get("user_text")
     if not user_text or not isinstance(user_text, str):
         raise HTTPException(400, "user_text is required")
@@ -232,7 +238,8 @@ async def picker_actor_run(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any
 
 
 @router.get("/tools-catalog")
-async def tools_catalog() -> Dict[str, Any]:
+async def tools_catalog(ctx: RequestContext = Depends(admin_guard)) -> Dict[str, Any]:
+    await ensure_permission(ctx, "debug", "view")
     _ensure_providers_loaded()
     providers = all_providers()
 

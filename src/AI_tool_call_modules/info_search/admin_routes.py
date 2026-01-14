@@ -5,7 +5,8 @@ from fastapi import APIRouter, UploadFile, File, Form, Query, HTTPException, Dep
 from openai import OpenAI
 
 from src.config import settings
-from src.security.deps import admin_guard
+from src.security.deps import admin_guard, RequestContext
+from src.security.permissions import ensure_permission
 from .models import VectorStoreOut, DocOut, DocListOut, DocListItem, OpOut
 from .service_openai import (
     get_or_create_vector_store,
@@ -23,8 +24,9 @@ router = APIRouter(prefix="/admin/info-search", tags=["admin.info-search"])
 @router.post("/vector-store", response_model=VectorStoreOut)
 async def admin_create_or_get_vector_store(
     tenant_id: str = Form(default="default"),
-    _=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ):
+    await ensure_permission(ctx, "knowledge_base", "refresh")
     client = OpenAI(api_key=settings.openai_api_key)
     vs_id = await get_or_create_vector_store(client, tenant_id)
     return VectorStoreOut(tenant_id=tenant_id, vector_store_id=vs_id)
@@ -34,8 +36,9 @@ async def admin_create_or_get_vector_store(
 async def admin_link_vector_store(
     tenant_id: str = Form(default="default"),
     vector_store_id: str = Form(...),
-    _=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ):
+    await ensure_permission(ctx, "knowledge_base", "refresh")
     client = OpenAI(api_key=settings.openai_api_key)
     try:
         vs_id = await link_existing_vector_store(client, tenant_id, vector_store_id)
@@ -48,8 +51,9 @@ async def admin_link_vector_store(
 async def admin_upload_docs(
     files: List[UploadFile] = File(..., description="One or more documents"),
     tenant_id: str = Form(default="default"),
-    _=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ):
+    await ensure_permission(ctx, "knowledge_base", "upload")
     if not files:
         raise HTTPException(400, "No files provided")
     client = OpenAI(api_key=settings.openai_api_key)
@@ -89,8 +93,9 @@ async def admin_upload_docs(
 @router.get("/docs", response_model=DocListOut)
 async def admin_list_docs(
     tenant_id: str = Query(default="default"),
-    _=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ):
+    await ensure_permission(ctx, "knowledge_base", "view")
     client = OpenAI(api_key=settings.openai_api_key)
     vs_id = await get_or_create_vector_store(client, tenant_id)
 
@@ -133,8 +138,9 @@ async def admin_list_docs(
 async def admin_delete_doc(
     file_id: str,
     tenant_id: str = Query(default="default"),
-    _=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ):
+    await ensure_permission(ctx, "knowledge_base", "delete")
     client = OpenAI(api_key=settings.openai_api_key)
     vs_id = await get_or_create_vector_store(client, tenant_id)
     hard_delete_file_from_store(client, vs_id, file_id)

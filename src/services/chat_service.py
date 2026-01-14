@@ -50,8 +50,8 @@ logger = logging.getLogger("uvicorn.error")
 
 # ---------------------------- helpers ----------------------------
 
-def _require_actor_model() -> str:
-    model = getattr(settings, "openai_model_actor", None)
+async def _require_actor_model() -> str:
+    model = await runtime_settings.get_openai_model_actor()
     if not model:
         # Explicit error so misconfig surfaces fast
         raise RuntimeError("ACTOR MODEL MISSING")
@@ -317,7 +317,7 @@ async def chat_turn(session_id: str, user_text: str) -> Tuple[str, str, List[str
         provider_addendum=provider_addendum,
         language=active_language,
     )
-    actor_model = _require_actor_model()
+    actor_model = await _require_actor_model()
 
     # Determine tool_choice (auto vs forced)
     tool_names = _tool_names_list(tools_spec)

@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 
 from openai import OpenAI
 from src.config import settings
+from src.services import runtime_settings
 from src.db.mongo import get_db
 from src.AI_tool_call_modules.base import FeatureProvider
 from src.services.features_registry import register as _register
@@ -96,13 +97,15 @@ class InfoSearchProviderImpl(FeatureProvider):
         prompt_text = f"{system_hint}\n\nQuestion: {query}"
 
         try:
+            model_name = await runtime_settings.get_openai_model_rag()
+            timeout_s = await runtime_settings.get_request_timeout_seconds()
             reply_text = await assistants_rag_answer(
                 client=client,
                 tenant_id=tenant_id,
                 vs_id=vs_id,
-                model_name=settings.openai_model,
+                model_name=model_name,
                 prompt_text=prompt_text,
-                timeout_s=getattr(settings, 'request_timeout_seconds', 60),
+                timeout_s=timeout_s,
             )
         except Exception as e:
             return {"ok": False, "error": {"code": "OPENAI_ERROR", "detail": f"assistants path: {e}"}}

@@ -85,6 +85,7 @@ async def create_admin_user(
     display_name: Optional[str] = None,
     roles: Optional[List[str]] = None,
     is_active: bool = True,
+    avatar_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create a new admin user.
 
@@ -105,6 +106,35 @@ async def create_admin_user(
         "display_name": display_name or normalized,
         "password_hash": pwd_hash,
         "roles": roles or ["admin"],
+        "avatar_url": avatar_url,
+        "is_active": is_active,
+        "created_at": now,
+        "updated_at": now,
+        "last_login_at": None,
+    }
+    res = await db.admin_users.insert_one(doc)
+    doc["_id"] = res.inserted_id
+    return doc
+
+
+async def create_admin_user_with_hash(
+    email: str,
+    password_hash: str,
+    display_name: Optional[str] = None,
+    roles: Optional[List[str]] = None,
+    is_active: bool = True,
+    avatar_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a new admin user with a pre-hashed password."""
+    db = get_db()
+    normalized = _normalize_email(email)
+    now = _now_utc()
+    doc: Dict[str, Any] = {
+        "email": normalized,
+        "display_name": display_name or normalized,
+        "password_hash": password_hash,
+        "roles": roles or ["admin"],
+        "avatar_url": avatar_url,
         "is_active": is_active,
         "created_at": now,
         "updated_at": now,
@@ -166,6 +196,69 @@ async def update_admin_password_hash(admin_id: Any, password_hash: str) -> bool:
         {"$set": {"password_hash": password_hash, "updated_at": now}},
     )
     return res.modified_count > 0 or res.matched_count > 0
+
+
+async def update_admin_roles(admin_id: Any, roles: List[str]) -> Optional[Dict[str, Any]]:
+    """Replace roles for an admin user."""
+    db = get_db()
+    oid = _to_oid(admin_id)
+    if oid is None:
+        return None
+    now = _now_utc()
+    return await db.admin_users.find_one_and_update(
+        {"_id": oid},
+        {"$set": {"roles": roles, "updated_at": now}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+async def list_admin_users(limit: int = 200) -> List[Dict[str, Any]]:
+    """List admin users sorted by created_at descending."""
+    db = get_db()
+    cur = db.admin_users.find({}).sort("created_at", -1).limit(limit)
+    return [x async for x in cur]
+
+
+async def update_admin_user(
+    admin_id: Any,
+    *,
+    display_name: Optional[str] = None,
+    avatar_url: Optional[str] = None,
+    roles: Optional[List[str]] = None,
+    is_active: Optional[bool] = None,
+) -> Optional[Dict[str, Any]]:
+    """Update mutable fields for an admin user."""
+    db = get_db()
+    oid = _to_oid(admin_id)
+    if oid is None:
+        return None
+    updates: Dict[str, Any] = {}
+    if display_name is not None:
+        updates["display_name"] = display_name
+    if avatar_url is not None:
+        updates["avatar_url"] = avatar_url
+    if roles is not None:
+        updates["roles"] = roles
+    if is_active is not None:
+        updates["is_active"] = is_active
+    if not updates:
+        return await get_admin_by_id(admin_id)
+    updates["updated_at"] = _now_utc()
+    return await db.admin_users.find_one_and_update(
+        {"_id": oid},
+        {"$set": updates},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+async def delete_admin_user(admin_id: Any) -> bool:
+    """Delete an admin user."""
+    db = get_db()
+    oid = _to_oid(admin_id)
+    if oid is None:
+        return False
+    res = await db.admin_users.delete_one({"_id": oid})
+    return res.deleted_count > 0
 
 
 async def mark_login_success(admin_id: Any) -> None:

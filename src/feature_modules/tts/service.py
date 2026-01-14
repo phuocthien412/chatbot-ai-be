@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from src.db.mongo import get_db
 from .providers.openai_tts import synthesize_bytes as openai_synthesize
 from .config import TTSConfig as Cfg
+from src.services import runtime_settings
 
 # Reuse same uploads root pattern as file upload route
 UPLOAD_ROOT = os.environ.get("UPLOAD_ROOT", os.path.join(os.getcwd(), "uploads"))
@@ -77,8 +78,10 @@ async def synthesize_and_optionally_save(
     save: bool,
 ) -> Dict[str, Any]:
     provider = provider or "openai"
-    voice = voice or Cfg.default_voice()
-    fmt = fmt or Cfg.default_format()
+    default_voice = await runtime_settings.get_openai_tts_voice()
+    default_format = await runtime_settings.get_tts_default_format()
+    voice = voice or default_voice or Cfg.default_voice()
+    fmt = fmt or default_format or Cfg.default_format()
     speed = speed if speed is not None else 1.0
     pitch = pitch if pitch is not None else 0
 

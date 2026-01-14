@@ -21,6 +21,7 @@ import re
 
 from openai import OpenAI
 from src.config import settings
+from src.services import runtime_settings
 from src.db.mongo import get_db
 from src.services.prompt_loader import get_picker_prompt_header
 from src.services.features_registry import all_providers
@@ -228,12 +229,13 @@ async def pick_tools(history_msgs: List[Dict[str, Any]]) -> Dict[str, Any]:
         {"role": "system", "content": PICKER_SYSTEM},
         {"role": "user", "content": prompt},
     ]
+    model = await runtime_settings.get_openai_model_picker()
 
     # LOG: picker LLM config
     try:
         logger.info(
             "[PICKER] LLM call → model=%s, msgs=%d",
-            settings.openai_model_picker, len(picker_messages)
+            model, len(picker_messages)
         )
     except Exception:
         pass
@@ -241,7 +243,7 @@ async def pick_tools(history_msgs: List[Dict[str, Any]]) -> Dict[str, Any]:
     print(picker_messages)
 
     resp = client.chat.completions.create(
-        model=settings.openai_model_picker,
+        model=model,
         messages=picker_messages,
     )
 
@@ -307,3 +309,4 @@ async def pick_tools(history_msgs: List[Dict[str, Any]]) -> Dict[str, Any]:
     log.debug("picker.result(raw): %s", data)
     log.debug("picker.result(resolved): %s", out)
     return out
+

@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 
 from src.repositories import sessions_repo, messages_repo
 from src.services.chat_service import chat_turn
-from src.security.deps import admin_guard, RequestContext
+from src.security.deps import admin_guard, RequestContext, ADMIN_ROLES
+from src.security.permissions import ensure_permission
 from src.services.events import manager as ws_manager, broadcast_event
 from src.security.jwt import verify_jwt
 
@@ -45,8 +46,9 @@ async def list_conversations(
     handoff_mode: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
     search: Optional[str] = Query(None),
-    _ctx=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ) -> Dict[str, Any]:
+    await ensure_permission(ctx, "conversations", "view")
     sessions = await sessions_repo.list_sessions_raw(
         status=status,
         handoff_mode=handoff_mode,
@@ -63,8 +65,9 @@ async def get_conversation(
     session_id: str,
     preview_messages: bool = Query(True),
     preview_limit: int = Query(50, ge=1, le=200),
-    _ctx=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ) -> Dict[str, Any]:
+    await ensure_permission(ctx, "conversations", "view")
     session = await _get_session_or_404(session_id)
     messages: List[Dict[str, Any]] = []
     if preview_messages:
@@ -77,8 +80,9 @@ async def get_conversation(
 async def get_conversation_messages(
     session_id: str,
     limit: int = Query(100, ge=1, le=500),
-    _ctx=Depends(admin_guard),
+    ctx: RequestContext = Depends(admin_guard),
 ) -> Dict[str, Any]:
+    await ensure_permission(ctx, "conversations", "view")
     await _get_session_or_404(session_id)
     messages = await messages_repo.list_messages(session_id, limit=limit)
     messages = _filter_internal_system_breadcrumbs(messages)
@@ -91,6 +95,7 @@ async def send_conversation_message(
     payload: SendMessageBody = Body(...),
     ctx: RequestContext = Depends(admin_guard),
 ) -> Dict[str, Any]:
+    await ensure_permission(ctx, "conversations", "reply")
     await _get_session_or_404(session_id)
     text = (payload.message or "").strip()
     if not text:
@@ -153,6 +158,7 @@ async def set_handoff(
     mode: str = Body(..., embed=True),
     ctx: RequestContext = Depends(admin_guard),
 ) -> Dict[str, Any]:
+    await ensure_permission(ctx, "conversations", "handoff")
     if mode not in ("bot", "admin"):
         raise HTTPException(status_code=400, detail="mode must be bot|admin")
     await _get_session_or_404(session_id)
@@ -189,7 +195,7 @@ async def conversations_ws(websocket: WebSocket):
             return
     try:
         payload = verify_jwt(token)
-        if payload.get("role") != "admin":
+        if payload.get("role") not in ADMIN_ROLES:
             await websocket.close(code=4403)
             return
     except Exception as exc:
@@ -212,13 +218,15 @@ async def conversations_ws(websocket: WebSocket):
 
 
 @router.post("/{session_id}/read")
-async def mark_conversation_read(session_id: str, _ctx=Depends(admin_guard)):
+async def mark_conversation_read(session_id: str, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "conversations", "view")
     await sessions_repo.mark_read(session_id)
     return {"ok": True}
 
 
 @router.delete("/{session_id}")
-async def delete_conversation(session_id: str, _ctx=Depends(admin_guard)):
+async def delete_conversation(session_id: str, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "conversations", "delete")
     success = await sessions_repo.delete_session(session_id)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -226,6 +234,7 @@ async def delete_conversation(session_id: str, _ctx=Depends(admin_guard)):
 
 
 @router.post("/mark-all-read")
-async def mark_all_conversations_read(_ctx=Depends(admin_guard)):
+async def mark_all_conversations_read(ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "conversations", "view")
     count = await sessions_repo.mark_all_read()
     return {"ok": True, "updated": count}

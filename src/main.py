@@ -27,6 +27,8 @@ from .routes.notifications import router as notifications_router
 from .routes.admin_profile import router as admin_profile_router
 from .routes.admin_settings import router as admin_settings_router
 from .routes.admin_conversations import router as admin_conversations_router
+from .routes.admin_permissions import router as admin_permissions_router
+from .routes.admin_users import router as admin_users_router
 from .routes.user_ws import router as user_ws_router
 from .security.deps import (
     enforce_sid_binding,
@@ -93,6 +95,8 @@ app.include_router(notifications_router, dependencies=_admin_protect)
 app.include_router(admin_profile_router)
 app.include_router(admin_settings_router, dependencies=_admin_protect)
 app.include_router(admin_conversations_router)
+app.include_router(admin_permissions_router, dependencies=_admin_protect)
+app.include_router(admin_users_router, dependencies=_admin_protect)
 app.include_router(user_ws_router)
 
 

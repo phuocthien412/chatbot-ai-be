@@ -8,7 +8,7 @@ Phase 1 admin endpoints:
 No approval/activation/versioning in this phase.
 """
 
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from typing import Dict, Any
 from datetime import datetime, timezone
 
@@ -16,11 +16,16 @@ from ....db.mongo import get_db
 from ..services.type_gen_simple import generate_spec_from_text
 from ..services.spec_sanity import basic_spec_checks
 from ....services.notifications import log_notification
+from ....security.deps import RequestContext, admin_guard
+from ....security.permissions import ensure_permission
 
 router = APIRouter(prefix="/admin", tags=["admin-simple"])
 
 @router.post("/ticket-types/from-text")
-async def create_or_replace_from_text(payload: Dict[str, Any] = Body(...)):
+async def create_or_replace_from_text(
+    payload: Dict[str, Any] = Body(...),
+    ctx: RequestContext = Depends(admin_guard),
+):
     """
     Body:
     {
@@ -37,8 +42,12 @@ async def create_or_replace_from_text(payload: Dict[str, Any] = Body(...)):
     if not isinstance(description_text, str) or not description_text.strip():
         raise HTTPException(400, "description_text must be a non-empty string")
 
+    db = get_db()
+    existing = await db.ticket_types.find_one({"_id": type_id})
+    await ensure_permission(ctx, "ticket_types", "edit" if existing else "create")
+
     # 1) Ask LLM to generate a spec
-    gen = generate_spec_from_text(description_text)
+    gen = await generate_spec_from_text(description_text)
     spec = gen["spec"]
     llm_meta = gen["llm"]
     raw = gen["raw"]
@@ -53,7 +62,6 @@ async def create_or_replace_from_text(payload: Dict[str, Any] = Body(...)):
         })
 
     # 3) Upsert into Mongo
-    db = get_db()
     now = datetime.now(timezone.utc)
     doc = {
         "_id": type_id,
@@ -64,7 +72,6 @@ async def create_or_replace_from_text(payload: Dict[str, Any] = Body(...)):
         "timestamps": {"updated_at": now, "created_at": now}
     }
     # If exists, preserve created_at
-    existing = await db.ticket_types.find_one({"_id": type_id})
     if existing and existing.get("timestamps", {}).get("created_at"):
         created_at = existing["timestamps"]["created_at"]
         if isinstance(created_at, datetime) and created_at.tzinfo is None:
@@ -86,13 +93,15 @@ async def create_or_replace_from_text(payload: Dict[str, Any] = Body(...)):
     return {"ok": True, "ticket_type": stored}
 
 @router.get("/ticket-types-simple")
-async def list_ticket_types_simple():
+async def list_ticket_types_simple(ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "ticket_types", "view")
     db = get_db()
     cur = db.ticket_types.find({}, {"_id": 1, "display_name": 1, "description_text": 1, "timestamps": 1})
     return [x async for x in cur]
 
 @router.get("/ticket-types-simple/{type_id}")
-async def get_ticket_type_simple(type_id: str):
+async def get_ticket_type_simple(type_id: str, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "ticket_types", "view")
     db = get_db()
     doc = await db.ticket_types.find_one(
         {"_id": type_id},
@@ -103,7 +112,8 @@ async def get_ticket_type_simple(type_id: str):
     return doc
 
 @router.delete("/ticket-types-simple/{type_id}")
-async def delete_ticket_type_simple(type_id: str):
+async def delete_ticket_type_simple(type_id: str, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "ticket_types", "delete")
     db = get_db()
     existing = await db.ticket_types.find_one(
         {"_id": type_id},

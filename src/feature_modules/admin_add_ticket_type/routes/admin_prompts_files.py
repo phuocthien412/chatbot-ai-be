@@ -31,13 +31,15 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Literal, Optional
 
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
 from src.services import prompt_loader
 from src.services.capabilities_banner import get_capabilities_banner_text
 from src.services.prompt_loader import get_actor_prompt_header, get_picker_prompt_header
 from src.services.notifications import log_notification
+from src.security.deps import RequestContext, admin_guard
+from src.security.permissions import ensure_permission
 
 router = APIRouter(prefix="/admin/prompts", tags=["admin"])
 
@@ -249,7 +251,8 @@ class RollbackBody(BaseModel):
 
 # ---------- Endpoints ----------
 @router.get("/files")
-async def list_files(request: Request):
+async def list_files(request: Request, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "prompts", "view")
     _enforce_auth_or_local(request)
     _ensure_dirs()
     items: List[Dict[str, Any]] = []
@@ -286,7 +289,8 @@ async def list_files(request: Request):
     }
 
 @router.get("/file/{name}")
-async def read_file(name: str, request: Request):
+async def read_file(name: str, request: Request, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "prompts", "view")
     _enforce_auth_or_local(request)
     _ensure_dirs()
     path = _file_path_for(name)
@@ -303,7 +307,8 @@ async def read_file(name: str, request: Request):
 
 
 @router.get("/system/files")
-async def list_system_files(request: Request):
+async def list_system_files(request: Request, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "prompts", "view")
     _enforce_auth_or_local(request)
     _ensure_dirs()
     items: List[Dict[str, Any]] = []
@@ -341,7 +346,8 @@ async def list_system_files(request: Request):
 
 
 @router.get("/system/file/{name}")
-async def read_system_file(name: str, request: Request):
+async def read_system_file(name: str, request: Request, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "prompts", "view")
     _enforce_auth_or_local(request)
     _ensure_dirs()
     path = _system_file_path(name)
@@ -358,7 +364,13 @@ async def read_system_file(name: str, request: Request):
 
 
 @router.put("/system/file/{name}")
-async def update_system_file(name: str, body: UpdateFileBody = Body(...), request: Request = None):
+async def update_system_file(
+    name: str,
+    body: UpdateFileBody = Body(...),
+    request: Request = None,
+    ctx: RequestContext = Depends(admin_guard),
+):
+    await ensure_permission(ctx, "prompts", "edit")
     _enforce_auth_or_local(request)
     _ensure_dirs()
 
@@ -408,7 +420,13 @@ async def update_system_file(name: str, body: UpdateFileBody = Body(...), reques
     }
 
 @router.put("/file/{name}")
-async def update_file(name: str, body: UpdateFileBody = Body(...), request: Request = None):
+async def update_file(
+    name: str,
+    body: UpdateFileBody = Body(...),
+    request: Request = None,
+    ctx: RequestContext = Depends(admin_guard),
+):
+    await ensure_permission(ctx, "prompts", "edit")
     _enforce_auth_or_local(request)
     _ensure_dirs()
 
@@ -461,7 +479,8 @@ async def update_file(name: str, body: UpdateFileBody = Body(...), request: Requ
     }
 
 @router.post("/reload")
-async def reload_prompts(request: Request):
+async def reload_prompts(request: Request, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "prompts", "reload")
     _enforce_auth_or_local(request)
     prompt_loader.reload()
     await log_notification(
@@ -473,7 +492,8 @@ async def reload_prompts(request: Request):
     return {"ok": True}
 
 @router.post("/preview")
-async def preview_prompts(request: Request):
+async def preview_prompts(request: Request, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "prompts", "view")
     _enforce_auth_or_local(request)
     banner = await get_capabilities_banner_text()
     actor_header = get_actor_prompt_header()
@@ -493,7 +513,8 @@ async def preview_prompts(request: Request):
     }
 
 @router.post("/rollback")
-async def rollback_file(body: RollbackBody = Body(...), request: Request = None):
+async def rollback_file(body: RollbackBody = Body(...), request: Request = None, ctx: RequestContext = Depends(admin_guard)):
+    await ensure_permission(ctx, "prompts", "edit")
     _enforce_auth_or_local(request)
     _ensure_dirs()
     # Validate backup filename shape to avoid path traversal

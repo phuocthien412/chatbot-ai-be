@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import json
 from openai import OpenAI
 from ....config import settings
+from ....services import runtime_settings
 
 PROMPT_TEMPLATE = """Return ONLY a JSON object (no markdown, no commentary) matching this structure:
 
@@ -54,11 +55,12 @@ Rules:
 Admin description:
 \"\"\"{DESCRIPTION}\"\"\""""
 
-def generate_spec_from_text(description_text: str) -> Dict[str, Any]:
+async def generate_spec_from_text(description_text: str) -> Dict[str, Any]:
     client = OpenAI(api_key=settings.openai_api_key)
     prompt = PROMPT_TEMPLATE.replace("{DESCRIPTION}", description_text)
+    model = await runtime_settings.get_openai_model_ticket_gen()
     resp = client.chat.completions.create(
-        model=settings.openai_model_ticket_gen,
+        model=model,
         messages=[
             {"role": "system", "content": "You output strict JSON only."},
             {"role": "user", "content": prompt}
@@ -77,7 +79,7 @@ def generate_spec_from_text(description_text: str) -> Dict[str, Any]:
             ]
         }
     meta = {
-        "model": settings.openai_model_ticket_gen,
+        "model": model,
         "generated_at": datetime.now(timezone.utc).isoformat()
     }
     return {"spec": spec, "llm": meta, "raw": content}

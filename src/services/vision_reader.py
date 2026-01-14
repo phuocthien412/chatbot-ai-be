@@ -22,6 +22,7 @@ import asyncio
 
 from openai import OpenAI
 from src.config import settings
+from src.services import runtime_settings
 
 # Hard guard to avoid huge payloads without adding new deps (Pillow).
 # If image > this threshold, we skip analysis (keep upload fast).
@@ -56,13 +57,8 @@ def _build_messages(data_url: str) -> list[dict]:
         {"role": "user", "content": user_parts},
     ]
 
-def _call_openai_sync(data_url: str, timeout_s: int) -> Optional[Dict[str, Any]]:
+def _call_openai_sync(data_url: str, timeout_s: int, model: str) -> Optional[Dict[str, Any]]:
     client = OpenAI(api_key=settings.openai_api_key)
-    model = (
-        (getattr(settings, "openai_model_vision", None))
-        or settings.openai_model_actor
-        or settings.openai_model
-    )
     try:
         resp = client.chat.completions.create(
             model=model,
@@ -96,6 +92,7 @@ async def quick_read_image(file_path: str, mime: str, timeout_s: Optional[int] =
     data_url = _to_data_url(file_path, mime or "image/jpeg")
     if not data_url:
         return None
-    timeout = int(timeout_s or settings.request_timeout_seconds)
+    timeout = int(timeout_s or await runtime_settings.get_request_timeout_seconds())
+    model = await runtime_settings.get_openai_model_vision()
     # Call the sync OpenAI client in a thread to keep the event loop responsive
-    return await asyncio.to_thread(_call_openai_sync, data_url, timeout)
+    return await asyncio.to_thread(_call_openai_sync, data_url, timeout, model)
