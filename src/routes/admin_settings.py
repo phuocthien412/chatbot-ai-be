@@ -91,7 +91,7 @@ async def put_request_timeout(
 
 @router.get("/ai-config", response_model=AiConfigResponse)
 async def get_ai_settings(ctx: RequestContext = Depends(admin_guard)) -> AiConfigResponse:
-    await ensure_permission(ctx, "settings", "view")
+    await ensure_permission(ctx, "ai_config", "view")
     data = await get_ai_config()
     return AiConfigResponse(**data)
 
@@ -101,6 +101,6 @@ async def put_ai_settings(
     payload: AiConfigBody,
     ctx: RequestContext = Depends(admin_guard),
 ) -> AiConfigResponse:
-    await ensure_permission(ctx, "settings", "edit")
+    await ensure_permission(ctx, "ai_config", "edit")
     data = await update_ai_config(payload.model_dump(exclude_none=True))
     return AiConfigResponse(**data)

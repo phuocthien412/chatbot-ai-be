@@ -23,6 +23,7 @@ MODULE_ACTIONS = {
     "ticket_types": ["view", "create", "edit", "delete"],
     "knowledge_base": ["view", "upload", "delete", "refresh"],
     "settings": ["view", "edit"],
+    "ai_config": ["view", "edit"],
     "debug": ["view", "run"],
     "profile": ["view", "edit"],
     "users": ["view", "create", "edit", "delete", "assign_role", "change_password"],
