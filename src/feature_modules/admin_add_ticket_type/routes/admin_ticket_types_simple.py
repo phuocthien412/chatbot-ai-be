@@ -101,3 +101,25 @@ async def get_ticket_type_simple(type_id: str):
     if not doc:
         raise HTTPException(404, "Not found")
     return doc
+
+@router.delete("/ticket-types-simple/{type_id}")
+async def delete_ticket_type_simple(type_id: str):
+    db = get_db()
+    existing = await db.ticket_types.find_one(
+        {"_id": type_id},
+        {"_id": 1, "display_name": 1}
+    )
+    if not existing:
+        raise HTTPException(404, "Not found")
+
+    await db.ticket_types.delete_one({"_id": type_id})
+    display_name = existing.get("display_name") or type_id
+    await log_notification(
+        title="Ticket type deleted",
+        message=f"Ticket type '{display_name}' was deleted.",
+        type_="warning",
+        module="ticket-types",
+        target_name=type_id,
+        meta={"display_name": display_name},
+    )
+    return {"ok": True, "deleted": type_id}
