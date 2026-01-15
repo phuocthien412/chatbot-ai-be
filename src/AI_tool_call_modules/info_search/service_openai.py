@@ -45,9 +45,26 @@ def _threads_api(client: OpenAI):
 async def get_or_create_vector_store(client: OpenAI, tenant_id: str) -> str:
     db = get_db()
     row = await db[COL_TENANTS].find_one({"tenant_id": tenant_id})
+    
+    # If we have a stored vector_store_id, validate it still exists on OpenAI
     if row and row.get("vector_store_id"):
-        return row["vector_store_id"]
+        vs_id = row["vector_store_id"]
+        vs_api = _vec_api(client)
+        try:
+            # Try to retrieve the vector store to verify it still exists
+            if hasattr(vs_api, "retrieve"):
+                _ = vs_api.retrieve(vs_id)
+            elif hasattr(vs_api, "get"):
+                _ = vs_api.get(vs_id)
+            # If successful, return the existing ID
+            return vs_id
+        except Exception as e:
+            # Vector store no longer exists (deleted or key changed)
+            # Log and proceed to create a new one
+            print(f"⚠️ Vector store {vs_id} for tenant {tenant_id} not accessible: {e}")
+            print(f"🔄 Creating new vector store for tenant {tenant_id}")
 
+    # Create new vector store
     vs_api = _vec_api(client)
     # Can give more params here for the chunking
     vs = vs_api.create(name=f"kb::{tenant_id}")
