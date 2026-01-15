@@ -49,6 +49,7 @@ async def get_or_create_vector_store(client: OpenAI, tenant_id: str) -> str:
         return row["vector_store_id"]
 
     vs_api = _vec_api(client)
+    # Can give more params here for the chunking
     vs = vs_api.create(name=f"kb::{tenant_id}")
     await db[COL_TENANTS].update_one(
         {"tenant_id": tenant_id},

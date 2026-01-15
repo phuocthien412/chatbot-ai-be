@@ -100,6 +100,7 @@ app.include_router(admin_users_router, dependencies=_admin_protect)
 app.include_router(user_ws_router)
 
 
+
 @app.get("/healthz")
 async def healthz():
     return {"ok": True}

@@ -8,6 +8,10 @@ class VectorStoreOut(BaseModel):
     tenant_id: str
     vector_store_id: str
 
+class VectorStoreList(BaseModel):
+    ok: bool = True
+    tenant_id_list: Optional[list[str]] = None
+
 class DocOut(BaseModel):
     ok: bool = True
     file_id: str
