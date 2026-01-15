@@ -6,7 +6,7 @@ from fastapi import APIRouter, UploadFile, File, Form, Query, HTTPException
 from openai import OpenAI
 
 from src.config import settings
-from .models import VectorStoreOut, DocOut, DocListOut, DocListItem, OpOut
+from .models import VectorStoreOut, DocOut, DocListOut, DocListItem, OpOut, VectorStoreList
 from .service_openai import (
     get_or_create_vector_store,
     link_existing_vector_store,
@@ -15,6 +15,7 @@ from .service_openai import (
     hard_delete_file_from_store,
 )
 from src.repositories import info_search_docs_repo
+from src.db.mongo import get_db
 
 router = APIRouter(prefix="/feature/info-search", tags=["info-search"])
 

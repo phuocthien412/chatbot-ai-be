@@ -6,7 +6,7 @@ from openai import OpenAI
 
 from src.config import settings
 from src.security.deps import admin_guard
-from .models import VectorStoreOut, DocOut, DocListOut, DocListItem, OpOut
+from .models import VectorStoreOut, DocOut, DocListOut, DocListItem, OpOut, VectorStoreList
 from .service_openai import (
     get_or_create_vector_store,
     link_existing_vector_store,
@@ -16,6 +16,7 @@ from .service_openai import (
 )
 from src.repositories import info_search_docs_repo
 from src.repositories import rag_uploads_repo
+from src.db.mongo import get_db
 
 router = APIRouter(prefix="/admin/info-search", tags=["admin.info-search"])
 
@@ -26,9 +27,19 @@ async def admin_create_or_get_vector_store(
     _=Depends(admin_guard),
 ):
     client = OpenAI(api_key=settings.openai_api_key)
+    print(settings.openai_api_key)
     vs_id = await get_or_create_vector_store(client, tenant_id)
     return VectorStoreOut(tenant_id=tenant_id, vector_store_id=vs_id)
 
+@router.get("/vector-store/get", response_model=VectorStoreList)
+async def get_vector_store():
+    db = get_db()["info_search_tenants"]
+    docs = await db.find(
+        {},
+        {"_id": 0, "tenant_id": 1}
+    ).to_list(length=None)
+    print(docs)
+    return VectorStoreList(tenant_id_list=[doc["tenant_id"] for doc in docs] or None)
 
 @router.post("/vector-store/link", response_model=VectorStoreOut)
 async def admin_link_vector_store(
