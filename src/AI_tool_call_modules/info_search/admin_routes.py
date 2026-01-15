@@ -7,7 +7,7 @@ from openai import OpenAI
 from src.config import settings
 from src.security.deps import admin_guard, RequestContext
 from src.security.permissions import ensure_permission
-from .models import VectorStoreOut, DocOut, DocListOut, DocListItem, OpOut
+from .models import VectorStoreOut, DocOut, DocListOut, DocListItem, OpOut, VectorStoreList
 from .service_openai import (
     get_or_create_vector_store,
     link_existing_vector_store,
