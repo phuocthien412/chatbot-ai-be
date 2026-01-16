@@ -257,3 +257,63 @@ async def mark_all_read() -> int:
         {"$set": {"unread_admin": 0}}
     )
     return res.modified_count
+
+
+async def count_active_sessions(minutes: int = 15) -> int:
+    """Count sessions active in the last `minutes`."""
+    db = get_db()
+    cutoff = _now_utc() - timedelta(minutes=minutes)
+    count = await db.sessions.count_documents({
+        "last_activity_at": {"$gte": cutoff},
+        "status": {"$ne": "ended"}
+    })
+    return count
+
+
+async def get_conversation_stats() -> Dict[str, Any]:
+    db = get_db()
+    
+    # 1. By Hour (0-23) in Vietnam Time (UTC+7)
+    pipeline_hour = [
+        {
+            "$project": {
+                "hour_vn": {"$hour": {"date": "$created_at", "timezone": "+07:00"}}
+            }
+        },
+        {
+            "$group": {
+                "_id": "$hour_vn",
+                "count": {"$sum": 1}
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
+    
+    # 2. By Day of Month (1-31) in Vietnam Time (UTC+7)
+    pipeline_day = [
+         {
+            "$project": {
+                "day_vn": {"$dayOfMonth": {"date": "$created_at", "timezone": "+07:00"}}
+            }
+        },
+        {
+            "$group": {
+                "_id": "$day_vn",
+                "count": {"$sum": 1}
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
+
+    stats_hour = await db.sessions.aggregate(pipeline_hour).to_list(length=24)
+    stats_day = await db.sessions.aggregate(pipeline_day).to_list(length=31)
+
+    # Format output for frontend
+    hours_map = {doc["_id"]: doc["count"] for doc in stats_hour}
+    day_map = {doc["_id"]: doc["count"] for doc in stats_day}
+    
+    return {
+        "by_hour": [{"hour": h, "count": hours_map.get(h, 0)} for h in range(24)],
+        # Day 1-31
+        "by_day": [{"day": d, "count": day_map.get(d, 0)} for d in range(1, 32)]
+    }

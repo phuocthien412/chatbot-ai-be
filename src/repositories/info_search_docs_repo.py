@@ -66,6 +66,11 @@ async def list_docs(tenant_id: str, vector_store_id: Optional[str] = None) -> Li
     return out
 
 
+async def count_docs(tenant_id: str = "default") -> int:
+    db = get_db()
+    return await db[COL_INFO_DOCS].count_documents({"tenant_id": tenant_id})
+
+
 async def delete_doc(tenant_id: str, file_id: str) -> None:
     db = get_db()
     await db[COL_INFO_DOCS].delete_one({"tenant_id": tenant_id, "file_id": file_id})

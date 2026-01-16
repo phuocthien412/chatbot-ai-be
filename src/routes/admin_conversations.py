@@ -57,7 +57,16 @@ async def list_conversations(
         include_debug=False,
     )
     sessions = [s for s in sessions if s.get("conversation_id")]
+    sessions = [s for s in sessions if s.get("conversation_id")]
     return {"items": sessions, "count": len(sessions)}
+
+
+@router.get("/stats")
+async def get_conversation_stats(
+    ctx: RequestContext = Depends(admin_guard),
+) -> Dict[str, Any]:
+    await ensure_permission(ctx, "conversations", "view")
+    return await sessions_repo.get_conversation_stats()
 
 
 @router.get("/{session_id}")
